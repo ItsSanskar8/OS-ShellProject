@@ -1,5 +1,7 @@
 import java.util.Scanner;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
 
@@ -18,7 +20,7 @@ public class Main {
                 break;
             }
 
-            // echo
+            // echo builtin
             if (input.startsWith("echo ")) {
                 System.out.println(input.substring(5));
                 continue;
@@ -29,44 +31,85 @@ public class Main {
 
                 String cmd = input.substring(5).trim();
 
-                // 1. builtin check
-                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type")) {
+                if (isBuiltin(cmd)) {
                     System.out.println(cmd + " is a shell builtin");
                     continue;
                 }
 
-                // 2. PATH search
-                String pathEnv = System.getenv("PATH");
+                String path = findExecutable(cmd);
 
-                if (pathEnv != null) {
-                    String[] paths = pathEnv.split(File.pathSeparator);
-
-                    for (String dir : paths) {
-
-                        File file = new File(dir, cmd);
-
-                        if (file.exists() && file.canExecute()) {
-                            System.out.println(cmd + " is " + file.getAbsolutePath());
-                            cmd = null;
-                            break;
-                        }
-                    }
-
-                    if (cmd == null) {
-                        continue;
-                    }
+                if (path != null) {
+                    System.out.println(cmd + " is " + path);
+                } else {
+                    System.out.println(cmd + ": not found");
                 }
 
-                // 3. not found
-                System.out.println(cmd + ": not found");
                 continue;
             }
 
-            if (!input.isEmpty()) {
-                System.out.println(input + ": command not found");
-            }
+            // external command execution
+            executeExternal(input);
         }
 
         scanner.close();
+    }
+
+    // ---------------- BUILTINS ----------------
+    static boolean isBuiltin(String cmd) {
+        return cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type");
+    }
+
+    // ---------------- PATH SEARCH ----------------
+    static String findExecutable(String cmd) {
+
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) return null;
+
+        String[] paths = pathEnv.split(File.pathSeparator);
+
+        for (String dir : paths) {
+            File file = new File(dir, cmd);
+
+            if (file.exists() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
+    }
+
+    // ---------------- EXECUTION ----------------
+    static void executeExternal(String input) {
+
+        if (input.isEmpty()) return;
+
+        String[] parts = input.split(" ");
+
+        String cmd = parts[0];
+
+        String path = findExecutable(cmd);
+
+        if (path == null) {
+            System.out.println(input + ": command not found");
+            return;
+        }
+
+        try {
+            List<String> command = new ArrayList<>();
+            command.add(path);
+
+            for (int i = 1; i < parts.length; i++) {
+                command.add(parts[i]);
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.inheritIO(); // IMPORTANT: prints program output directly
+
+            Process process = pb.start();
+            process.waitFor();
+
+        } catch (Exception e) {
+            System.out.println("Error executing command");
+        }
     }
 }
