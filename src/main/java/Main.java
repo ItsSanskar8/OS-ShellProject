@@ -1,10 +1,10 @@
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 public class Main {
 
@@ -54,26 +54,46 @@ public class Main {
                 continue;
             }
 
-            // TAB: attempt builtin completion (only for first token)
+            // TAB: attempt completion for builtins, PATH executables, or files in CWD
             if (c == '\t') {
                 String current = buffer.toString();
                 int lastSpace = current.lastIndexOf(' ');
 
                 if (lastSpace == -1) {
-                    String[] builtins = new String[]{"echo", "exit", "type", "pwd", "cd", "jobs"};
-                    List<String> matches = new ArrayList<>();
+                    String prefix = current;
+                    List<String> candidates = new ArrayList<>();
 
-                    for (String b : builtins) {
-                        if (b.startsWith(current)) {
-                            matches.add(b);
-                        }
+                    candidates.addAll(getBuiltinCandidates(prefix));
+                    candidates.addAll(getExecutableCandidates(prefix));
+                    candidates.addAll(getFileCandidates(prefix));
+
+                    if (candidates.isEmpty()) {
+                        System.out.print("\u0007");
+                        System.out.flush();
+                        continue;
                     }
 
-                    if (matches.size() == 1) {
-                        String match = matches.get(0);
-                        String suffix = match.substring(current.length());
+                    String commonPrefix = longestCommonPrefix(candidates);
+
+                    if (commonPrefix.length() > prefix.length()) {
+                        String suffix = commonPrefix.substring(prefix.length());
+                        buffer.append(suffix);
+                        System.out.print(suffix);
+
+                        if (candidates.size() == 1) {
+                            buffer.append(' ');
+                            System.out.print(' ');
+                        }
+
+                        System.out.flush();
+                    } else if (candidates.size() == 1) {
+                        String match = candidates.get(0);
+                        String suffix = match.substring(prefix.length());
                         buffer.append(suffix).append(' ');
                         System.out.print(suffix + " ");
+                        System.out.flush();
+                    } else {
+                        System.out.print("\u0007");
                         System.out.flush();
                     }
                 }
@@ -115,6 +135,100 @@ public class Main {
             new ProcessBuilder("sh", "-c", "stty echo icanon").inheritIO().start().waitFor();
         } catch (Exception ignored) {
         }
+    }
+
+    private static List<String> getBuiltinCandidates(String prefix) {
+        String[] builtins = new String[]{"echo", "exit", "type", "pwd", "cd", "jobs", "history", "declare", "complete"};
+        List<String> matches = new ArrayList<>();
+
+        for (String builtIn : builtins) {
+            if (builtIn.startsWith(prefix)) {
+                matches.add(builtIn);
+            }
+        }
+
+        return matches;
+    }
+
+    private static List<String> getExecutableCandidates(String prefix) {
+        List<String> matches = new ArrayList<>();
+        String pathEnv = System.getenv("PATH");
+
+        if (pathEnv == null || pathEnv.isEmpty()) {
+            return matches;
+        }
+
+        Set<String> uniqueNames = new TreeSet<>();
+
+        for (String dir : pathEnv.split(File.pathSeparator)) {
+            File directory = new File(dir);
+            if (!directory.isDirectory()) {
+                continue;
+            }
+
+            File[] files = directory.listFiles();
+            if (files == null) {
+                continue;
+            }
+
+            for (File file : files) {
+                if (!file.isFile() || !file.canExecute()) {
+                    continue;
+                }
+
+                String name = file.getName();
+                if (name.startsWith(prefix)) {
+                    uniqueNames.add(name);
+                }
+            }
+        }
+
+        matches.addAll(uniqueNames);
+        return matches;
+    }
+
+    private static List<String> getFileCandidates(String prefix) {
+        List<String> matches = new ArrayList<>();
+        File cwd = currentDirectory;
+        File[] files = cwd.listFiles();
+
+        if (files == null) {
+            return matches;
+        }
+
+        Set<String> uniqueNames = new TreeSet<>();
+
+        for (File file : files) {
+            String name = file.getName();
+            if (name.startsWith(prefix)) {
+                uniqueNames.add(name);
+            }
+        }
+
+        matches.addAll(uniqueNames);
+        return matches;
+    }
+
+    private static String longestCommonPrefix(List<String> strings) {
+        if (strings.isEmpty()) {
+            return "";
+        }
+
+        String prefix = strings.get(0);
+
+        for (int i = 1; i < strings.size(); i++) {
+            String current = strings.get(i);
+            int j = 0;
+            while (j < prefix.length() && j < current.length() && prefix.charAt(j) == current.charAt(j)) {
+                j++;
+            }
+            prefix = prefix.substring(0, j);
+            if (prefix.isEmpty()) {
+                break;
+            }
+        }
+
+        return prefix;
     }
 
     private static void executeLine(String input) {
