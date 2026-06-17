@@ -84,7 +84,6 @@ public class Main {
         if (input.isEmpty()) return;
 
         String[] parts = input.split(" ");
-
         String cmd = parts[0];
 
         String path = findExecutable(cmd);
@@ -96,14 +95,22 @@ public class Main {
 
         try {
             List<String> command = new ArrayList<>();
-            command.add(path);
 
+            // IMPORTANT: argv[0] must be command name (NOT full path)
+            command.add(cmd);
+
+            // add arguments
             for (int i = 1; i < parts.length; i++) {
                 command.add(parts[i]);
             }
 
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.inheritIO(); // IMPORTANT: prints program output directly
+
+            // inherit environment (PATH etc.)
+            pb.environment().put("PATH", System.getenv("PATH"));
+
+            // print program output directly
+            pb.inheritIO();
 
             Process process = pb.start();
             process.waitFor();
