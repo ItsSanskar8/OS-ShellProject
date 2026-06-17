@@ -20,9 +20,25 @@ public class Main {
                 break;
             }
 
-            // ---------------- pwd builtin ----------------
+            // ---------------- pwd ----------------
             if (input.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
+                continue;
+            }
+
+            // ---------------- cd (ABSOLUTE PATH ONLY) ----------------
+            if (input.startsWith("cd ")) {
+
+                String path = input.substring(3).trim();
+
+                File dir = new File(path);
+
+                if (dir.isDirectory()) {
+                    System.setProperty("user.dir", dir.getAbsolutePath());
+                } else {
+                    System.out.println("cd: " + path + ": No such file or directory");
+                }
+
                 continue;
             }
 
@@ -64,7 +80,8 @@ public class Main {
         return cmd.equals("echo") ||
                cmd.equals("exit") ||
                cmd.equals("type") ||
-               cmd.equals("pwd");
+               cmd.equals("pwd") ||
+               cmd.equals("cd");
     }
 
     // ---------------- PATH SEARCH ----------------
@@ -104,7 +121,6 @@ public class Main {
         try {
             List<String> command = new ArrayList<>();
 
-            // IMPORTANT: argv[0] must be command name
             command.add(cmd);
 
             for (int i = 1; i < parts.length; i++) {
