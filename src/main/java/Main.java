@@ -56,7 +56,8 @@ public class Main {
                 continue;
             }
 
-            List<String> parts = parse(input);
+            List<String> parts = tokenize(input);
+
             if (parts.isEmpty()) continue;
 
             String cmd = parts.get(0);
@@ -81,11 +82,6 @@ public class Main {
                     }
                 }
 
-                continue;
-            }
-
-            if (cmd.equals("cat")) {
-                executeExternal(parts);
                 continue;
             }
 
@@ -152,22 +148,29 @@ public class Main {
         }
     }
 
-    static List<String> parse(String input) {
+    static List<String> tokenize(String input) {
 
         List<String> result = new ArrayList<>();
         StringBuilder current = new StringBuilder();
+
         boolean inSingle = false;
+        boolean inDouble = false;
 
         for (int i = 0; i < input.length(); i++) {
 
             char c = input.charAt(i);
 
-            if (c == '\'' ) {
+            if (c == '\'' && !inDouble) {
                 inSingle = !inSingle;
                 continue;
             }
 
-            if (c == ' ' && !inSingle) {
+            if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+
+            if (c == ' ' && !inSingle && !inDouble) {
 
                 if (current.length() > 0) {
                     result.add(current.toString());
