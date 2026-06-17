@@ -153,13 +153,18 @@ public class Main {
 
             char c = input.charAt(i);
 
+            if (inSingle) {
+                current.append(c);
+                continue;
+            }
+
             if (escape) {
                 current.append(c);
                 escape = false;
                 continue;
             }
 
-            if (!inSingle && !inDouble && c == '\\') {
+            if (!inDouble && c == '\\') {
                 escape = true;
                 continue;
             }
