@@ -57,13 +57,13 @@ public class Main {
                     output = String.join(" ", parsedCommand.commandParts.subList(1, parsedCommand.commandParts.size()));
                 }
 
-                writeStdout(output, parsedCommand.stdoutFile);
+                writeStdout(output, parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
                 continue;
             }
 
             if (command.equals("pwd")) {
                 createEmptyFileIfNeeded(parsedCommand.stderrFile);
-                writeStdout(currentDirectory.getAbsolutePath(), parsedCommand.stdoutFile);
+                writeStdout(currentDirectory.getAbsolutePath(), parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
                 continue;
             }
 
@@ -73,17 +73,25 @@ public class Main {
             }
 
             if (command.equals("type")) {
-                handleType(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stderrFile);
+                handleType(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stdoutAppend, parsedCommand.stderrFile);
                 continue;
             }
 
-            runExternalCommand(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stderrFile);
+            runExternalCommand(
+                    parsedCommand.commandParts,
+                    parsedCommand.stdoutFile,
+                    parsedCommand.stdoutAppend,
+                    parsedCommand.stderrFile
+            );
         }
     }
 
     private static ParsedCommand parseRedirection(List<String> tokens) {
         List<String> commandParts = new ArrayList<>();
+
         String stdoutFile = null;
+        boolean stdoutAppend = false;
+
         String stderrFile = null;
 
         for (int i = 0; i < tokens.size(); i++) {
@@ -92,6 +100,13 @@ public class Main {
             if (token.equals(">") || token.equals("1>")) {
                 if (i + 1 < tokens.size()) {
                     stdoutFile = tokens.get(i + 1);
+                    stdoutAppend = false;
+                    i++;
+                }
+            } else if (token.equals(">>") || token.equals("1>>")) {
+                if (i + 1 < tokens.size()) {
+                    stdoutFile = tokens.get(i + 1);
+                    stdoutAppend = true;
                     i++;
                 }
             } else if (token.equals("2>")) {
@@ -104,7 +119,7 @@ public class Main {
             }
         }
 
-        return new ParsedCommand(commandParts, stdoutFile, stderrFile);
+        return new ParsedCommand(commandParts, stdoutFile, stdoutAppend, stderrFile);
     }
 
     private static void handleCd(List<String> commandParts, String stderrFile) {
@@ -140,7 +155,7 @@ public class Main {
         }
     }
 
-    private static void handleType(List<String> commandParts, String stdoutFile, String stderrFile) {
+    private static void handleType(List<String> commandParts, String stdoutFile, boolean stdoutAppend, String stderrFile) {
         createEmptyFileIfNeeded(stderrFile);
 
         if (commandParts.size() < 2) {
@@ -150,16 +165,16 @@ public class Main {
         String target = commandParts.get(1);
 
         if (isBuiltin(target)) {
-            writeStdout(target + " is a shell builtin", stdoutFile);
+            writeStdout(target + " is a shell builtin", stdoutFile, stdoutAppend);
             return;
         }
 
         String executablePath = findExecutable(target);
 
         if (executablePath != null) {
-            writeStdout(target + " is " + executablePath, stdoutFile);
+            writeStdout(target + " is " + executablePath, stdoutFile, stdoutAppend);
         } else {
-            writeStdout(target + ": not found", stdoutFile);
+            writeStdout(target + ": not found", stdoutFile, stdoutAppend);
         }
     }
 
@@ -171,7 +186,7 @@ public class Main {
                 || command.equals("cd");
     }
 
-    private static void runExternalCommand(List<String> commandParts, String stdoutFile, String stderrFile) {
+    private static void runExternalCommand(List<String> commandParts, String stdoutFile, boolean stdoutAppend, String stderrFile) {
         String command = commandParts.get(0);
 
         String executablePath = findExecutable(command);
@@ -183,12 +198,20 @@ public class Main {
         }
 
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder(commandParts);
+            List<String> processCommand = new ArrayList<>(commandParts);
+            processCommand.set(0, executablePath);
+
+            ProcessBuilder processBuilder = new ProcessBuilder(processCommand);
             processBuilder.directory(currentDirectory);
 
             if (stdoutFile != null) {
                 File outputFile = resolveFile(stdoutFile);
-                processBuilder.redirectOutput(outputFile);
+
+                if (stdoutAppend) {
+                    processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(outputFile));
+                } else {
+                    processBuilder.redirectOutput(outputFile);
+                }
             } else {
                 processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
@@ -228,13 +251,13 @@ public class Main {
         return null;
     }
 
-    private static void writeStdout(String text, String stdoutFile) {
+    private static void writeStdout(String text, String stdoutFile, boolean append) {
         if (stdoutFile == null) {
             System.out.println(text);
             return;
         }
 
-        writeToFile(text, stdoutFile, false);
+        writeToFile(text, stdoutFile, append);
     }
 
     private static void writeStderr(String text, String stderrFile) {
@@ -326,7 +349,25 @@ public class Main {
                     continue;
                 }
 
-                if (c == '1' && i + 1 < input.length() && input.charAt(i + 1) == '>') {
+                if (c == '1'
+                        && i + 2 < input.length()
+                        && input.charAt(i + 1) == '>'
+                        && input.charAt(i + 2) == '>') {
+
+                    if (current.length() > 0) {
+                        tokens.add(current.toString());
+                        current.setLength(0);
+                    }
+
+                    tokens.add("1>>");
+                    i += 2;
+                    continue;
+                }
+
+                if (c == '1'
+                        && i + 1 < input.length()
+                        && input.charAt(i + 1) == '>') {
+
                     if (current.length() > 0) {
                         tokens.add(current.toString());
                         current.setLength(0);
@@ -337,13 +378,30 @@ public class Main {
                     continue;
                 }
 
-                if (c == '2' && i + 1 < input.length() && input.charAt(i + 1) == '>') {
+                if (c == '2'
+                        && i + 1 < input.length()
+                        && input.charAt(i + 1) == '>') {
+
                     if (current.length() > 0) {
                         tokens.add(current.toString());
                         current.setLength(0);
                     }
 
                     tokens.add("2>");
+                    i++;
+                    continue;
+                }
+
+                if (c == '>'
+                        && i + 1 < input.length()
+                        && input.charAt(i + 1) == '>') {
+
+                    if (current.length() > 0) {
+                        tokens.add(current.toString());
+                        current.setLength(0);
+                    }
+
+                    tokens.add(">>");
                     i++;
                     continue;
                 }
@@ -371,12 +429,16 @@ public class Main {
 
     private static class ParsedCommand {
         List<String> commandParts;
+
         String stdoutFile;
+        boolean stdoutAppend;
+
         String stderrFile;
 
-        ParsedCommand(List<String> commandParts, String stdoutFile, String stderrFile) {
+        ParsedCommand(List<String> commandParts, String stdoutFile, boolean stdoutAppend, String stderrFile) {
             this.commandParts = commandParts;
             this.stdoutFile = stdoutFile;
+            this.stdoutAppend = stdoutAppend;
             this.stderrFile = stderrFile;
         }
     }
