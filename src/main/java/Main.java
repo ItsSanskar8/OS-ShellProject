@@ -14,7 +14,7 @@ public class Main {
             System.out.print("$ ");
             System.out.flush();
 
-            String input = scanner.nextLine().trim();
+            String input = scanner.nextLine();
 
             if (input.equals("exit")) {
                 break;
@@ -32,8 +32,7 @@ public class Main {
                 File target;
 
                 if (path.equals("~")) {
-                    String home = System.getenv("HOME");
-                    target = new File(home);
+                    target = new File(System.getenv("HOME"));
                 } else if (path.startsWith("/")) {
                     target = new File(path);
                 } else {
@@ -57,93 +56,133 @@ public class Main {
                 continue;
             }
 
-            if (input.startsWith("echo ")) {
-                System.out.println(input.substring(5));
+            List<String> parts = parse(input);
+            if (parts.isEmpty()) continue;
+
+            String cmd = parts.get(0);
+
+            if (cmd.equals("echo")) {
+                System.out.println(String.join(" ", parts.subList(1, parts.size())));
                 continue;
             }
 
-            if (input.startsWith("type ")) {
+            if (cmd.equals("type")) {
 
-                String cmd = input.substring(5).trim();
+                String arg = parts.size() > 1 ? parts.get(1) : "";
 
-                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("cd")) {
-                    System.out.println(cmd + " is a shell builtin");
-                    continue;
-                }
-
-                String pathEnv = System.getenv("PATH");
-                String found = null;
-
-                if (pathEnv != null) {
-                    String[] paths = pathEnv.split(File.pathSeparator);
-
-                    for (String dir : paths) {
-                        File file = new File(dir, cmd);
-
-                        if (file.exists() && file.canExecute()) {
-                            found = file.getAbsolutePath();
-                            break;
-                        }
-                    }
-                }
-
-                if (found != null) {
-                    System.out.println(cmd + " is " + found);
+                if (isBuiltin(arg)) {
+                    System.out.println(arg + " is a shell builtin");
                 } else {
-                    System.out.println(cmd + ": not found");
-                }
-
-                continue;
-            }
-
-            if (input.isEmpty()) {
-                continue;
-            }
-
-            String[] parts = input.split(" ");
-            String cmd = parts[0];
-
-            String pathEnv = System.getenv("PATH");
-            String found = null;
-
-            if (pathEnv != null) {
-                String[] paths = pathEnv.split(File.pathSeparator);
-
-                for (String dir : paths) {
-                    File file = new File(dir, cmd);
-
-                    if (file.exists() && file.canExecute()) {
-                        found = file.getAbsolutePath();
-                        break;
+                    String found = findExecutable(arg);
+                    if (found != null) {
+                        System.out.println(arg + " is " + found);
+                    } else {
+                        System.out.println(arg + ": not found");
                     }
                 }
-            }
 
-            if (found == null) {
-                System.out.println(input + ": command not found");
                 continue;
             }
 
-            try {
-
-                List<String> command = new ArrayList<>();
-                command.add(cmd);
-
-                for (int i = 1; i < parts.length; i++) {
-                    command.add(parts[i]);
-                }
-
-                ProcessBuilder pb = new ProcessBuilder(command);
-                pb.inheritIO();
-
-                Process process = pb.start();
-                process.waitFor();
-
-            } catch (Exception e) {
-                System.out.println("Error executing command");
+            if (cmd.equals("cat")) {
+                executeExternal(parts);
+                continue;
             }
+
+            executeExternal(parts);
         }
 
         scanner.close();
+    }
+
+    static boolean isBuiltin(String cmd) {
+        return cmd.equals("echo") ||
+               cmd.equals("exit") ||
+               cmd.equals("type") ||
+               cmd.equals("pwd") ||
+               cmd.equals("cd");
+    }
+
+    static String findExecutable(String cmd) {
+
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) return null;
+
+        String[] paths = pathEnv.split(File.pathSeparator);
+
+        for (String dir : paths) {
+            File file = new File(dir, cmd);
+
+            if (file.exists() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
+    }
+
+    static void executeExternal(List<String> parts) {
+
+        String cmd = parts.get(0);
+
+        String path = findExecutable(cmd);
+
+        if (path == null) {
+            System.out.println(String.join(" ", parts) + ": command not found");
+            return;
+        }
+
+        try {
+
+            List<String> command = new ArrayList<>();
+            command.add(cmd);
+
+            for (int i = 1; i < parts.size(); i++) {
+                command.add(parts.get(i));
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.inheritIO();
+
+            Process process = pb.start();
+            process.waitFor();
+
+        } catch (Exception e) {
+            System.out.println("Error executing command");
+        }
+    }
+
+    static List<String> parse(String input) {
+
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingle = false;
+
+        for (int i = 0; i < input.length(); i++) {
+
+            char c = input.charAt(i);
+
+            if (c == '\'' ) {
+                inSingle = !inSingle;
+                continue;
+            }
+
+            if (c == ' ' && !inSingle) {
+
+                if (current.length() > 0) {
+                    result.add(current.toString());
+                    current.setLength(0);
+                }
+
+            } else {
+                current.append(c);
+            }
+        }
+
+        if (current.length() > 0) {
+            result.add(current.toString());
+        }
+
+        return result;
     }
 }
