@@ -1,5 +1,6 @@
 import java.util.Scanner;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,39 +61,40 @@ public class Main {
 
             if (parts.isEmpty()) continue;
 
-            String cmd = parts.get(0);
+            List<String> cmdParts = new ArrayList<>();
+            String outputFile = null;
+
+            for (int i = 0; i < parts.size(); i++) {
+                String p = parts.get(i);
+
+                if ((p.equals(">") || p.equals("1>")) && i + 1 < parts.size()) {
+                    outputFile = parts.get(i + 1);
+                    i++;
+                } else {
+                    cmdParts.add(p);
+                }
+            }
+
+            if (cmdParts.isEmpty()) continue;
+
+            String cmd = cmdParts.get(0);
 
             if (cmd.equals("echo")) {
-                System.out.println(String.join(" ", parts.subList(1, parts.size())));
+                String out = String.join(" ", cmdParts.subList(1, cmdParts.size()));
+                handleOutput(out, outputFile);
                 continue;
             }
 
             if (cmd.equals("type")) {
 
-                String arg = parts.size() > 1 ? parts.get(1) : "";
+                String arg = cmdParts.size() > 1 ? cmdParts.get(1) : "";
 
                 if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
-                    System.out.println(arg + " is a shell builtin");
+                    handleOutput(arg + " is a shell builtin", outputFile);
                 } else {
-
-                    String pathEnv = System.getenv("PATH");
-                    String found = null;
-
-                    if (pathEnv != null) {
-                        String[] paths = pathEnv.split(File.pathSeparator);
-
-                        for (String dir : paths) {
-                            File file = new File(dir, arg);
-
-                            if (file.exists() && file.canExecute()) {
-                                found = file.getAbsolutePath();
-                                break;
-                            }
-                        }
-                    }
-
+                    String found = findExecutable(arg);
                     if (found != null) {
-                        System.out.println(arg + " is " + found);
+                        handleOutput(arg + " is " + found, outputFile);
                     } else {
                         System.out.println(arg + ": not found");
                     }
@@ -101,47 +103,67 @@ public class Main {
                 continue;
             }
 
-            executeExternal(parts);
+            executeExternal(cmdParts, outputFile);
         }
 
         scanner.close();
     }
 
-    static void executeExternal(List<String> parts) {
+    static void handleOutput(String text, String file) {
 
-        String cmd = parts.get(0);
+        if (file == null) {
+            System.out.println(text);
+            return;
+        }
+
+        try {
+            FileOutputStream fos = new FileOutputStream(file, false);
+            fos.write(text.getBytes());
+            fos.close();
+        } catch (Exception e) {
+            System.out.println(text);
+        }
+    }
+
+    static String findExecutable(String cmd) {
 
         String pathEnv = System.getenv("PATH");
-        String found = null;
+        if (pathEnv == null) return null;
 
-        if (pathEnv != null) {
-            String[] paths = pathEnv.split(File.pathSeparator);
+        String[] paths = pathEnv.split(File.pathSeparator);
 
-            for (String dir : paths) {
-                File file = new File(dir, cmd);
+        for (String dir : paths) {
+            File file = new File(dir, cmd);
 
-                if (file.exists() && file.canExecute()) {
-                    found = file.getAbsolutePath();
-                    break;
-                }
+            if (file.exists() && file.canExecute()) {
+                return file.getAbsolutePath();
             }
         }
 
-        if (found == null) {
+        return null;
+    }
+
+    static void executeExternal(List<String> parts, String outputFile) {
+
+        String cmd = parts.get(0);
+
+        String path = findExecutable(cmd);
+
+        if (path == null) {
             System.out.println(String.join(" ", parts) + ": command not found");
             return;
         }
 
         try {
 
-            List<String> command = new ArrayList<>();
-            command.add(cmd);
-
-            for (int i = 1; i < parts.size(); i++) {
-                command.add(parts.get(i));
-            }
+            List<String> command = new ArrayList<>(parts);
 
             ProcessBuilder pb = new ProcessBuilder(command);
+
+            if (outputFile != null) {
+                pb.redirectOutput(new File(outputFile));
+            }
+
             pb.inheritIO();
 
             Process process = pb.start();
