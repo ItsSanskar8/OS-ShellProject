@@ -11,84 +11,151 @@ public class Main {
     private static File currentDirectory = new File(System.getProperty("user.dir"));
 
     public static void main(String[] args) throws Exception {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        // Switch to raw character input to support TAB completion
+        System.out.print("$ ");
+        System.out.flush();
+
+        StringBuilder buffer = new StringBuilder();
 
         while (true) {
-            System.out.print("$ ");
-            System.out.flush();
+            int r = System.in.read();
 
-            String input = reader.readLine();
-
-            if (input == null) {
-                break;
+            if (r == -1) {
+                break; // EOF
             }
 
-            input = input.trim();
+            char c = (char) r;
 
-            if (input.isEmpty()) {
+            // Ignore carriage return
+            if (c == '\r') {
                 continue;
             }
 
-            List<String> tokens = tokenize(input);
+            // Enter: process the current buffer
+            if (c == '\n') {
+                System.out.print("\n");
+                String input = buffer.toString().trim();
+                buffer.setLength(0);
 
-            if (tokens.isEmpty()) {
-                continue;
-            }
-
-            ParsedCommand parsedCommand = parseRedirection(tokens);
-
-            if (parsedCommand.commandParts.isEmpty()) {
-                continue;
-            }
-
-            String command = parsedCommand.commandParts.get(0);
-
-            if (command.equals("exit")) {
-                break;
-            }
-
-            if (command.equals("echo")) {
-                createEmptyFileIfNeeded(parsedCommand.stderrFile);
-
-                String output = "";
-
-                if (parsedCommand.commandParts.size() > 1) {
-                    output = String.join(" ", parsedCommand.commandParts.subList(1, parsedCommand.commandParts.size()));
+                if (input.isEmpty()) {
+                    System.out.print("$ ");
+                    System.out.flush();
+                    continue;
                 }
 
-                writeStdout(output, parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
+                executeLine(input);
+
+                System.out.print("$ ");
+                System.out.flush();
                 continue;
             }
 
-            if (command.equals("pwd")) {
-                createEmptyFileIfNeeded(parsedCommand.stderrFile);
-                writeStdout(currentDirectory.getAbsolutePath(), parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
+            // TAB: attempt builtin completion (only for first token)
+            if (c == '\t') {
+                String current = buffer.toString();
+                int lastSpace = current.lastIndexOf(' ');
+
+                if (lastSpace == -1) {
+                    String[] builtins = new String[]{"echo", "exit", "type", "pwd", "cd", "jobs"};
+                    List<String> matches = new ArrayList<>();
+
+                    for (String b : builtins) {
+                        if (b.startsWith(current)) {
+                            matches.add(b);
+                        }
+                    }
+
+                    if (matches.size() == 1) {
+                        String match = matches.get(0);
+                        String suffix = match.substring(current.length());
+                        buffer.append(suffix).append(' ');
+                        System.out.print(suffix + " ");
+                        System.out.flush();
+                    }
+                }
+
                 continue;
             }
 
-            if (command.equals("cd")) {
-                handleCd(parsedCommand.commandParts, parsedCommand.stderrFile, parsedCommand.stderrAppend);
+            // Backspace (127) or Ctrl-H (8)
+            if (r == 127 || r == 8) {
+                if (buffer.length() > 0) {
+                    buffer.setLength(buffer.length() - 1);
+                    // Erase last character on terminal
+                    System.out.print("\b \b");
+                    System.out.flush();
+                }
+
                 continue;
             }
 
-            if (command.equals("type")) {
-                handleType(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stdoutAppend, parsedCommand.stderrFile);
-                continue;
-            }
-
-            if (command.equals("jobs")) {
-                createEmptyFileIfNeeded(parsedCommand.stderrFile);
-                continue;
-            }
-
-                runExternalCommand(
-                    parsedCommand.commandParts,
-                    parsedCommand.stdoutFile,
-                    parsedCommand.stdoutAppend,
-                    parsedCommand.stderrFile,
-                    parsedCommand.stderrAppend
-                );
+            // Regular character: echo and append
+            buffer.append(c);
+            System.out.print(c);
+            System.out.flush();
         }
+    }
+
+    private static void executeLine(String input) {
+        List<String> tokens = tokenize(input);
+
+        if (tokens.isEmpty()) {
+            return;
+        }
+
+        ParsedCommand parsedCommand = parseRedirection(tokens);
+
+        if (parsedCommand.commandParts.isEmpty()) {
+            return;
+        }
+
+        String command = parsedCommand.commandParts.get(0);
+
+        if (command.equals("exit")) {
+            System.exit(0);
+        }
+
+        if (command.equals("echo")) {
+            createEmptyFileIfNeeded(parsedCommand.stderrFile);
+
+            String output = "";
+
+            if (parsedCommand.commandParts.size() > 1) {
+                output = String.join(" ", parsedCommand.commandParts.subList(1, parsedCommand.commandParts.size()));
+            }
+
+            writeStdout(output, parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
+            return;
+        }
+
+        if (command.equals("pwd")) {
+            createEmptyFileIfNeeded(parsedCommand.stderrFile);
+            writeStdout(currentDirectory.getAbsolutePath(), parsedCommand.stdoutFile, parsedCommand.stdoutAppend);
+            return;
+        }
+
+        if (command.equals("cd")) {
+            handleCd(parsedCommand.commandParts, parsedCommand.stderrFile, parsedCommand.stderrAppend);
+            return;
+        }
+
+        if (command.equals("type")) {
+            handleType(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stdoutAppend, parsedCommand.stderrFile);
+            return;
+        }
+
+        if (command.equals("jobs")) {
+            createEmptyFileIfNeeded(parsedCommand.stderrFile);
+            return;
+        }
+
+        runExternalCommand(
+                parsedCommand.commandParts,
+                parsedCommand.stdoutFile,
+                parsedCommand.stdoutAppend,
+                parsedCommand.stderrFile,
+                parsedCommand.stderrAppend
+        );
     }
 
     private static ParsedCommand parseRedirection(List<String> tokens) {
