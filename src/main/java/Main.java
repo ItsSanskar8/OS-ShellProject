@@ -31,7 +31,10 @@ public class Main {
 
                 File target;
 
-                if (path.startsWith("/")) {
+                if (path.equals("~")) {
+                    String home = System.getenv("HOME");
+                    target = new File(home);
+                } else if (path.startsWith("/")) {
                     target = new File(path);
                 } else {
                     File current = new File(System.getProperty("user.dir"));
