@@ -1,7 +1,5 @@
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -61,7 +59,7 @@ public class Main {
             }
 
             if (!expandedHistory.equals(input)) {
-                System.out.println(expandedHistory);
+                printTerminalLine(expandedHistory);
                 input = expandedHistory;
             }
 
@@ -91,8 +89,7 @@ public class Main {
             char c = (char) value;
 
             if (c == '\n' || c == '\r') {
-                System.out.println();
-                System.out.flush();
+                printTerminalNewline();
                 return buffer.toString();
             }
 
@@ -114,8 +111,7 @@ public class Main {
             if (c == 3) {
                 resetTabState();
                 buffer.setLength(0);
-                System.out.println("^C");
-                System.out.flush();
+                printTerminalLine("^C");
                 return "";
             }
 
@@ -159,6 +155,16 @@ public class Main {
         buffer.setLength(0);
         buffer.append(value);
         System.out.print("\r$ " + value + "\033[K");
+        System.out.flush();
+    }
+
+    private static void printTerminalLine(String text) {
+        System.out.print(text + "\r\n");
+        System.out.flush();
+    }
+
+    private static void printTerminalNewline() {
+        System.out.print("\r\n");
         System.out.flush();
     }
 
@@ -231,7 +237,7 @@ public class Main {
         }
 
         if (repeatedTabCount >= 2) {
-            System.out.println();
+            printTerminalNewline();
             printCompletionCandidates(candidates);
             System.out.print("$ " + buffer);
             System.out.flush();
@@ -513,8 +519,7 @@ public class Main {
         }
 
         Collections.sort(displays);
-        System.out.println(String.join("  ", displays));
-        System.out.flush();
+        printTerminalLine(String.join("  ", displays));
     }
 
     private static void bell() {
@@ -633,7 +638,7 @@ public class Main {
         Job job = new Job(jobId, originalInput.trim(), new ArrayList<>());
         job.workerThread = worker;
         jobs.add(job);
-        System.out.println("[" + jobId + "] " + worker.getId());
+        printTerminalLine("[" + jobId + "] started");
     }
 
     private static void runExternalCommand(
@@ -665,7 +670,7 @@ public class Main {
             if (background) {
                 int jobId = nextJobId();
                 jobs.add(new Job(jobId, originalInput.trim(), List.of(process)));
-                System.out.println("[" + jobId + "] " + process.pid());
+                printTerminalLine("[" + jobId + "] " + process.pid());
             } else {
                 process.waitFor();
             }
@@ -683,7 +688,7 @@ public class Main {
             Job job = new Job(jobId, originalInput.trim(), new ArrayList<>());
             job.workerThread = worker;
             jobs.add(job);
-            System.out.println("[" + jobId + "] " + worker.getId());
+            printTerminalLine("[" + jobId + "] started");
             return;
         }
 
@@ -1043,7 +1048,7 @@ public class Main {
             }
         }
 
-        System.out.println(input + ": event not found");
+        printTerminalLine(input + ": event not found");
         return null;
     }
 
@@ -1376,8 +1381,7 @@ public class Main {
 
     private static void writeStdout(String text, String file, boolean append) {
         if (file == null) {
-            System.out.println(text);
-            System.out.flush();
+            printTerminalLine(text);
         } else {
             writeToFile(text + "\n", file, append);
         }
@@ -1398,8 +1402,7 @@ public class Main {
 
     private static void writeStderr(String text, String file, boolean append) {
         if (file == null) {
-            System.out.println(text);
-            System.out.flush();
+            printTerminalLine(text);
         } else {
             writeToFile(text + "\n", file, append);
         }
@@ -1429,7 +1432,8 @@ public class Main {
             if (append && file.exists()) {
                 return;
             }
-            try (FileOutputStream ignored = new FileOutputStream(file, append)) {
+            try (FileOutputStream stream = new FileOutputStream(file, append)) {
+                stream.getFD();
             }
         } catch (Exception ignored) {
         }
