@@ -74,7 +74,23 @@ public class Main {
                 if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
-                    String found = findExecutable(arg);
+
+                    String pathEnv = System.getenv("PATH");
+                    String found = null;
+
+                    if (pathEnv != null) {
+                        String[] paths = pathEnv.split(File.pathSeparator);
+
+                        for (String dir : paths) {
+                            File file = new File(dir, arg);
+
+                            if (file.exists() && file.canExecute()) {
+                                found = file.getAbsolutePath();
+                                break;
+                            }
+                        }
+                    }
+
                     if (found != null) {
                         System.out.println(arg + " is " + found);
                     } else {
@@ -91,31 +107,27 @@ public class Main {
         scanner.close();
     }
 
-    static String findExecutable(String cmd) {
-
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return null;
-
-        String[] paths = pathEnv.split(File.pathSeparator);
-
-        for (String dir : paths) {
-            File file = new File(dir, cmd);
-
-            if (file.exists() && file.canExecute()) {
-                return file.getAbsolutePath();
-            }
-        }
-
-        return null;
-    }
-
     static void executeExternal(List<String> parts) {
 
         String cmd = parts.get(0);
 
-        String path = findExecutable(cmd);
+        String pathEnv = System.getenv("PATH");
+        String found = null;
 
-        if (path == null) {
+        if (pathEnv != null) {
+            String[] paths = pathEnv.split(File.pathSeparator);
+
+            for (String dir : paths) {
+                File file = new File(dir, cmd);
+
+                if (file.exists() && file.canExecute()) {
+                    found = file.getAbsolutePath();
+                    break;
+                }
+            }
+        }
+
+        if (found == null) {
             System.out.println(String.join(" ", parts) + ": command not found");
             return;
         }
@@ -154,7 +166,20 @@ public class Main {
             char c = input.charAt(i);
 
             if (inSingle) {
-                current.append(c);
+                if (c == '\'') {
+                    inSingle = false;
+                } else {
+                    current.append(c);
+                }
+                continue;
+            }
+
+            if (inDouble) {
+                if (c == '"') {
+                    inDouble = false;
+                } else {
+                    current.append(c);
+                }
                 continue;
             }
 
@@ -164,28 +189,26 @@ public class Main {
                 continue;
             }
 
-            if (!inDouble && c == '\\') {
+            if (c == '\\') {
                 escape = true;
                 continue;
             }
 
-            if (c == '\'' && !inDouble) {
-                inSingle = !inSingle;
+            if (c == '\'') {
+                inSingle = true;
                 continue;
             }
 
-            if (c == '"' && !inSingle) {
-                inDouble = !inDouble;
+            if (c == '"') {
+                inDouble = true;
                 continue;
             }
 
-            if (c == ' ' && !inSingle && !inDouble) {
-
+            if (c == ' ') {
                 if (current.length() > 0) {
                     result.add(current.toString());
                     current.setLength(0);
                 }
-
             } else {
                 current.append(c);
             }
