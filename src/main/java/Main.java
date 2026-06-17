@@ -13,7 +13,6 @@ public class Main {
 
             String input = scanner.nextLine().trim();
 
-            // exit builtin
             if (input.equals("exit")) {
                 break;
             }
@@ -24,13 +23,23 @@ public class Main {
                 continue;
             }
 
-            // empty input
-            if (input.isEmpty()) {
+            // type builtin
+            if (input.startsWith("type ")) {
+
+                String cmd = input.substring(5).trim();
+
+                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type")) {
+                    System.out.println(cmd + " is a shell builtin");
+                } else {
+                    System.out.println(cmd + ": not found");
+                }
+
                 continue;
             }
 
-            // fallback
-            System.out.println(input + ": command not found");
+            if (!input.isEmpty()) {
+                System.out.println(input + ": command not found");
+            }
         }
 
         scanner.close();
