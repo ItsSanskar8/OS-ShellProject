@@ -1,18 +1,15 @@
+import java.util.*;
+
 public class Main {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
 
-        while (true) {
+        System.out.print("$ ");
+        System.out.flush();
 
-            // Print shell prompt
-            System.out.print("$ ");
-            System.out.flush();
+        Scanner sc = new Scanner(System.in);
 
-            // Temporary infinite loop
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                break;
-            }
-        }
+        String input = sc.nextLine();
+
+        System.out.println(input + ": command not found");
     }
 }
