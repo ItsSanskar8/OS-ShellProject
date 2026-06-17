@@ -29,7 +29,6 @@ public class Main {
             if (input.startsWith("cd ")) {
 
                 String path = input.substring(3).trim();
-
                 File target;
 
                 if (path.equals("~")) {
@@ -57,21 +56,21 @@ public class Main {
                 continue;
             }
 
-            List<String> parts = tokenize(input);
+            List<String> tokens = tokenize(input);
 
-            if (parts.isEmpty()) continue;
+            if (tokens.isEmpty()) continue;
 
             List<String> cmdParts = new ArrayList<>();
             String outputFile = null;
 
-            for (int i = 0; i < parts.size(); i++) {
-                String p = parts.get(i);
+            for (int i = 0; i < tokens.size(); i++) {
+                String t = tokens.get(i);
 
-                if ((p.equals(">") || p.equals("1>")) && i + 1 < parts.size()) {
-                    outputFile = parts.get(i + 1);
+                if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
+                    outputFile = tokens.get(i + 1);
                     i++;
                 } else {
-                    cmdParts.add(p);
+                    cmdParts.add(t);
                 }
             }
 
@@ -110,7 +109,6 @@ public class Main {
     }
 
     static void handleOutput(String text, String file) {
-
         if (file == null) {
             System.out.println(text);
             return;
@@ -134,7 +132,6 @@ public class Main {
 
         for (String dir : paths) {
             File file = new File(dir, cmd);
-
             if (file.exists() && file.canExecute()) {
                 return file.getAbsolutePath();
             }
@@ -164,7 +161,7 @@ public class Main {
                 pb.redirectOutput(new File(outputFile));
             }
 
-            pb.inheritIO();
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
 
             Process process = pb.start();
             process.waitFor();
