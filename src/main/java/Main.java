@@ -20,48 +20,72 @@ public class Main {
                 break;
             }
 
-            // ---------------- pwd ----------------
             if (input.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
                 continue;
             }
 
-            // ---------------- cd (ABSOLUTE PATH ONLY) ----------------
             if (input.startsWith("cd ")) {
 
                 String path = input.substring(3).trim();
 
-                File dir = new File(path);
+                File target;
 
-                if (dir.isDirectory()) {
-                    System.setProperty("user.dir", dir.getAbsolutePath());
+                if (path.startsWith("/")) {
+                    target = new File(path);
                 } else {
+                    File current = new File(System.getProperty("user.dir"));
+                    target = new File(current, path);
+                }
+
+                try {
+                    File resolved = new File(target.getCanonicalPath());
+
+                    if (resolved.isDirectory()) {
+                        System.setProperty("user.dir", resolved.getAbsolutePath());
+                    } else {
+                        System.out.println("cd: " + path + ": No such file or directory");
+                    }
+
+                } catch (Exception e) {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
 
                 continue;
             }
 
-            // echo builtin
             if (input.startsWith("echo ")) {
                 System.out.println(input.substring(5));
                 continue;
             }
 
-            // type builtin
             if (input.startsWith("type ")) {
 
                 String cmd = input.substring(5).trim();
 
-                if (isBuiltin(cmd)) {
+                if (cmd.equals("echo") || cmd.equals("exit") || cmd.equals("type") || cmd.equals("pwd") || cmd.equals("cd")) {
                     System.out.println(cmd + " is a shell builtin");
                     continue;
                 }
 
-                String path = findExecutable(cmd);
+                String pathEnv = System.getenv("PATH");
+                String found = null;
 
-                if (path != null) {
-                    System.out.println(cmd + " is " + path);
+                if (pathEnv != null) {
+                    String[] paths = pathEnv.split(File.pathSeparator);
+
+                    for (String dir : paths) {
+                        File file = new File(dir, cmd);
+
+                        if (file.exists() && file.canExecute()) {
+                            found = file.getAbsolutePath();
+                            break;
+                        }
+                    }
+                }
+
+                if (found != null) {
+                    System.out.println(cmd + " is " + found);
                 } else {
                     System.out.println(cmd + ": not found");
                 }
@@ -69,74 +93,54 @@ public class Main {
                 continue;
             }
 
-            executeExternal(input);
+            if (input.isEmpty()) {
+                continue;
+            }
+
+            String[] parts = input.split(" ");
+            String cmd = parts[0];
+
+            String pathEnv = System.getenv("PATH");
+            String found = null;
+
+            if (pathEnv != null) {
+                String[] paths = pathEnv.split(File.pathSeparator);
+
+                for (String dir : paths) {
+                    File file = new File(dir, cmd);
+
+                    if (file.exists() && file.canExecute()) {
+                        found = file.getAbsolutePath();
+                        break;
+                    }
+                }
+            }
+
+            if (found == null) {
+                System.out.println(input + ": command not found");
+                continue;
+            }
+
+            try {
+
+                List<String> command = new ArrayList<>();
+                command.add(cmd);
+
+                for (int i = 1; i < parts.length; i++) {
+                    command.add(parts[i]);
+                }
+
+                ProcessBuilder pb = new ProcessBuilder(command);
+                pb.inheritIO();
+
+                Process process = pb.start();
+                process.waitFor();
+
+            } catch (Exception e) {
+                System.out.println("Error executing command");
+            }
         }
 
         scanner.close();
-    }
-
-    // ---------------- BUILTINS ----------------
-    static boolean isBuiltin(String cmd) {
-        return cmd.equals("echo") ||
-               cmd.equals("exit") ||
-               cmd.equals("type") ||
-               cmd.equals("pwd") ||
-               cmd.equals("cd");
-    }
-
-    // ---------------- PATH SEARCH ----------------
-    static String findExecutable(String cmd) {
-
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return null;
-
-        String[] paths = pathEnv.split(File.pathSeparator);
-
-        for (String dir : paths) {
-            File file = new File(dir, cmd);
-
-            if (file.exists() && file.canExecute()) {
-                return file.getAbsolutePath();
-            }
-        }
-
-        return null;
-    }
-
-    // ---------------- EXECUTION ----------------
-    static void executeExternal(String input) {
-
-        if (input.isEmpty()) return;
-
-        String[] parts = input.split(" ");
-        String cmd = parts[0];
-
-        String path = findExecutable(cmd);
-
-        if (path == null) {
-            System.out.println(input + ": command not found");
-            return;
-        }
-
-        try {
-            List<String> command = new ArrayList<>();
-
-            command.add(cmd);
-
-            for (int i = 1; i < parts.length; i++) {
-                command.add(parts[i]);
-            }
-
-            ProcessBuilder pb = new ProcessBuilder(command);
-
-            pb.environment().put("PATH", System.getenv("PATH"));
-            pb.inheritIO();
-
-            Process process = pb.start();
-            process.waitFor();
-
-        } catch (Exception e) {
-            System.out.println("Error executing command");
-        }
     }
 }
