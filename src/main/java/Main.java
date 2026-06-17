@@ -198,18 +198,18 @@ public class Main {
     ) {
         if (candidates.size() == 1) {
             CompletionCandidate candidate = candidates.get(0);
-            String replacement = candidate.replacement;
+            String completed = candidate.replacement;
 
             if (candidate.addSpace) {
-                replacement = replacement + " ";
+                completed = completed + " ";
             }
 
-            if (!replacement.startsWith(context.currentWord)) {
+            if (!completed.startsWith(context.currentWord)) {
                 return;
             }
 
-            String suffix = replacement.substring(context.currentWord.length());
-            buffer.replace(context.wordStart, buffer.length(), replacement);
+            String suffix = completed.substring(context.currentWord.length());
+            buffer.replace(context.wordStart, buffer.length(), completed);
             System.out.print(suffix);
             System.out.flush();
             lastCompletionBuffer = buffer.toString();
