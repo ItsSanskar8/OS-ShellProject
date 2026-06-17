@@ -11,7 +11,6 @@ public class Main {
     private static File currentDirectory = new File(System.getProperty("user.dir"));
 
     public static void main(String[] args) throws Exception {
-
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
         while (true) {
@@ -198,10 +197,18 @@ public class Main {
         }
 
         try {
-            List<String> processCommand = new ArrayList<>(commandParts);
-            processCommand.set(0, executablePath);
-
-            ProcessBuilder processBuilder = new ProcessBuilder(processCommand);
+            /*
+             * Important:
+             * Do NOT replace commandParts[0] with executablePath.
+             * CodeCrafters expects argv[0] to remain the original command name.
+             *
+             * Wrong:
+             * /tmp/ant/custom_exe_8130
+             *
+             * Correct:
+             * custom_exe_8130
+             */
+            ProcessBuilder processBuilder = new ProcessBuilder(commandParts);
             processBuilder.directory(currentDirectory);
 
             if (stdoutFile != null) {
