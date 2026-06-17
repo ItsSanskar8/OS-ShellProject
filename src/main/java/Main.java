@@ -208,10 +208,8 @@ public class Main {
                 return;
             }
 
-            String suffix = completed.substring(context.currentWord.length());
             buffer.replace(context.wordStart, buffer.length(), completed);
-            System.out.print(suffix);
-            System.out.flush();
+            replaceInputBuffer(buffer, buffer.toString());
             lastCompletionBuffer = buffer.toString();
             return;
         }
