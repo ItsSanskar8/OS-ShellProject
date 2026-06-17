@@ -49,6 +49,8 @@ public class Main {
             }
 
             if (command.equals("echo")) {
+                createEmptyFileIfNeeded(parsedCommand.stderrFile);
+
                 String output = "";
 
                 if (parsedCommand.commandParts.size() > 1) {
@@ -60,27 +62,29 @@ public class Main {
             }
 
             if (command.equals("pwd")) {
+                createEmptyFileIfNeeded(parsedCommand.stderrFile);
                 writeStdout(currentDirectory.getAbsolutePath(), parsedCommand.stdoutFile);
                 continue;
             }
 
             if (command.equals("cd")) {
-                handleCd(parsedCommand.commandParts);
+                handleCd(parsedCommand.commandParts, parsedCommand.stderrFile);
                 continue;
             }
 
             if (command.equals("type")) {
-                handleType(parsedCommand.commandParts, parsedCommand.stdoutFile);
+                handleType(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stderrFile);
                 continue;
             }
 
-            runExternalCommand(parsedCommand.commandParts, parsedCommand.stdoutFile);
+            runExternalCommand(parsedCommand.commandParts, parsedCommand.stdoutFile, parsedCommand.stderrFile);
         }
     }
 
     private static ParsedCommand parseRedirection(List<String> tokens) {
         List<String> commandParts = new ArrayList<>();
         String stdoutFile = null;
+        String stderrFile = null;
 
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
@@ -90,15 +94,20 @@ public class Main {
                     stdoutFile = tokens.get(i + 1);
                     i++;
                 }
+            } else if (token.equals("2>")) {
+                if (i + 1 < tokens.size()) {
+                    stderrFile = tokens.get(i + 1);
+                    i++;
+                }
             } else {
                 commandParts.add(token);
             }
         }
 
-        return new ParsedCommand(commandParts, stdoutFile);
+        return new ParsedCommand(commandParts, stdoutFile, stderrFile);
     }
 
-    private static void handleCd(List<String> commandParts) {
+    private static void handleCd(List<String> commandParts, String stderrFile) {
         String path;
 
         if (commandParts.size() < 2) {
@@ -122,15 +131,18 @@ public class Main {
 
             if (resolved.exists() && resolved.isDirectory()) {
                 currentDirectory = resolved;
+                createEmptyFileIfNeeded(stderrFile);
             } else {
-                System.out.println("cd: " + path + ": No such file or directory");
+                writeStderr("cd: " + path + ": No such file or directory", stderrFile);
             }
         } catch (Exception e) {
-            System.out.println("cd: " + path + ": No such file or directory");
+            writeStderr("cd: " + path + ": No such file or directory", stderrFile);
         }
     }
 
-    private static void handleType(List<String> commandParts, String stdoutFile) {
+    private static void handleType(List<String> commandParts, String stdoutFile, String stderrFile) {
+        createEmptyFileIfNeeded(stderrFile);
+
         if (commandParts.size() < 2) {
             return;
         }
@@ -147,7 +159,7 @@ public class Main {
         if (executablePath != null) {
             writeStdout(target + " is " + executablePath, stdoutFile);
         } else {
-            System.out.println(target + ": not found");
+            writeStdout(target + ": not found", stdoutFile);
         }
     }
 
@@ -159,13 +171,14 @@ public class Main {
                 || command.equals("cd");
     }
 
-    private static void runExternalCommand(List<String> commandParts, String stdoutFile) {
+    private static void runExternalCommand(List<String> commandParts, String stdoutFile, String stderrFile) {
         String command = commandParts.get(0);
 
         String executablePath = findExecutable(command);
 
         if (executablePath == null) {
-            System.out.println(command + ": command not found");
+            writeStderr(command + ": command not found", stderrFile);
+            createEmptyFileIfNeeded(stdoutFile);
             return;
         }
 
@@ -180,14 +193,18 @@ public class Main {
                 processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
 
-            // Important: stderr should still appear on terminal.
-            processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
+            if (stderrFile != null) {
+                File errorFile = resolveFile(stderrFile);
+                processBuilder.redirectError(errorFile);
+            } else {
+                processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
 
             Process process = processBuilder.start();
             process.waitFor();
 
         } catch (Exception e) {
-            System.out.println(command + ": command not found");
+            writeStderr(command + ": command not found", stderrFile);
         }
     }
 
@@ -217,15 +234,44 @@ public class Main {
             return;
         }
 
-        try {
-            File outputFile = resolveFile(stdoutFile);
+        writeToFile(text, stdoutFile, false);
+    }
 
-            try (FileOutputStream outputStream = new FileOutputStream(outputFile, false)) {
+    private static void writeStderr(String text, String stderrFile) {
+        if (stderrFile == null) {
+            System.out.println(text);
+            return;
+        }
+
+        writeToFile(text, stderrFile, false);
+    }
+
+    private static void writeToFile(String text, String path, boolean append) {
+        try {
+            File file = resolveFile(path);
+
+            try (FileOutputStream outputStream = new FileOutputStream(file, append)) {
                 outputStream.write((text + "\n").getBytes(StandardCharsets.UTF_8));
             }
 
         } catch (Exception e) {
             System.out.println(text);
+        }
+    }
+
+    private static void createEmptyFileIfNeeded(String path) {
+        if (path == null) {
+            return;
+        }
+
+        try {
+            File file = resolveFile(path);
+
+            try (FileOutputStream outputStream = new FileOutputStream(file, false)) {
+                // Create or truncate file.
+            }
+
+        } catch (Exception ignored) {
         }
     }
 
@@ -280,16 +326,6 @@ public class Main {
                     continue;
                 }
 
-                if (c == '>') {
-                    if (current.length() > 0) {
-                        tokens.add(current.toString());
-                        current.setLength(0);
-                    }
-
-                    tokens.add(">");
-                    continue;
-                }
-
                 if (c == '1' && i + 1 < input.length() && input.charAt(i + 1) == '>') {
                     if (current.length() > 0) {
                         tokens.add(current.toString());
@@ -298,6 +334,27 @@ public class Main {
 
                     tokens.add("1>");
                     i++;
+                    continue;
+                }
+
+                if (c == '2' && i + 1 < input.length() && input.charAt(i + 1) == '>') {
+                    if (current.length() > 0) {
+                        tokens.add(current.toString());
+                        current.setLength(0);
+                    }
+
+                    tokens.add("2>");
+                    i++;
+                    continue;
+                }
+
+                if (c == '>') {
+                    if (current.length() > 0) {
+                        tokens.add(current.toString());
+                        current.setLength(0);
+                    }
+
+                    tokens.add(">");
                     continue;
                 }
             }
@@ -315,10 +372,12 @@ public class Main {
     private static class ParsedCommand {
         List<String> commandParts;
         String stdoutFile;
+        String stderrFile;
 
-        ParsedCommand(List<String> commandParts, String stdoutFile) {
+        ParsedCommand(List<String> commandParts, String stdoutFile, String stderrFile) {
             this.commandParts = commandParts;
             this.stdoutFile = stdoutFile;
+            this.stderrFile = stderrFile;
         }
     }
 }
