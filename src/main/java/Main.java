@@ -71,7 +71,7 @@ public class Main {
 
                 String arg = parts.size() > 1 ? parts.get(1) : "";
 
-                if (isBuiltin(arg)) {
+                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
                     String found = findExecutable(arg);
@@ -89,14 +89,6 @@ public class Main {
         }
 
         scanner.close();
-    }
-
-    static boolean isBuiltin(String cmd) {
-        return cmd.equals("echo") ||
-               cmd.equals("exit") ||
-               cmd.equals("type") ||
-               cmd.equals("pwd") ||
-               cmd.equals("cd");
     }
 
     static String findExecutable(String cmd) {
@@ -155,10 +147,22 @@ public class Main {
 
         boolean inSingle = false;
         boolean inDouble = false;
+        boolean escape = false;
 
         for (int i = 0; i < input.length(); i++) {
 
             char c = input.charAt(i);
+
+            if (escape) {
+                current.append(c);
+                escape = false;
+                continue;
+            }
+
+            if (!inSingle && !inDouble && c == '\\') {
+                escape = true;
+                continue;
+            }
 
             if (c == '\'' && !inDouble) {
                 inSingle = !inSingle;
