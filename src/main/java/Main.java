@@ -76,6 +76,11 @@ public class Main {
                 continue;
             }
 
+            if (command.equals("jobs")) {
+                createEmptyFileIfNeeded(parsedCommand.stderrFile);
+                continue;
+            }
+
                 runExternalCommand(
                     parsedCommand.commandParts,
                     parsedCommand.stdoutFile,
@@ -189,6 +194,7 @@ public class Main {
         return command.equals("exit")
                 || command.equals("echo")
                 || command.equals("type")
+                || command.equals("jobs")
                 || command.equals("pwd")
                 || command.equals("cd");
     }
