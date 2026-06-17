@@ -58,42 +58,43 @@ public class Main {
 
             List<String> tokens = tokenize(input);
 
-            if (tokens.isEmpty()) continue;
-
-            List<String> cmdParts = new ArrayList<>();
+            List<String> cmd = new ArrayList<>();
             String outputFile = null;
 
             for (int i = 0; i < tokens.size(); i++) {
+
                 String t = tokens.get(i);
 
-                if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
-                    outputFile = tokens.get(i + 1);
-                    i++;
+                if (t.equals(">") || t.equals("1>")) {
+                    if (i + 1 < tokens.size()) {
+                        outputFile = tokens.get(i + 1);
+                        i++;
+                    }
                 } else {
-                    cmdParts.add(t);
+                    cmd.add(t);
                 }
             }
 
-            if (cmdParts.isEmpty()) continue;
+            if (cmd.isEmpty()) continue;
 
-            String cmd = cmdParts.get(0);
+            String command = cmd.get(0);
 
-            if (cmd.equals("echo")) {
-                String out = String.join(" ", cmdParts.subList(1, cmdParts.size()));
-                handleOutput(out, outputFile);
+            if (command.equals("echo")) {
+                String out = String.join(" ", cmd.subList(1, cmd.size()));
+                writeOutput(out, outputFile);
                 continue;
             }
 
-            if (cmd.equals("type")) {
+            if (command.equals("type")) {
 
-                String arg = cmdParts.size() > 1 ? cmdParts.get(1) : "";
+                String arg = cmd.size() > 1 ? cmd.get(1) : "";
 
-                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
-                    handleOutput(arg + " is a shell builtin", outputFile);
+                if (isBuiltin(arg)) {
+                    writeOutput(arg + " is a shell builtin", outputFile);
                 } else {
                     String found = findExecutable(arg);
                     if (found != null) {
-                        handleOutput(arg + " is " + found, outputFile);
+                        writeOutput(arg + " is " + found, outputFile);
                     } else {
                         System.out.println(arg + ": not found");
                     }
@@ -102,13 +103,22 @@ public class Main {
                 continue;
             }
 
-            executeExternal(cmdParts, outputFile);
+            runExternal(cmd, outputFile);
         }
 
         scanner.close();
     }
 
-    static void handleOutput(String text, String file) {
+    static boolean isBuiltin(String cmd) {
+        return cmd.equals("echo")
+                || cmd.equals("exit")
+                || cmd.equals("type")
+                || cmd.equals("pwd")
+                || cmd.equals("cd");
+    }
+
+    static void writeOutput(String text, String file) {
+
         if (file == null) {
             System.out.println(text);
             return;
@@ -131,31 +141,27 @@ public class Main {
         String[] paths = pathEnv.split(File.pathSeparator);
 
         for (String dir : paths) {
-            File file = new File(dir, cmd);
-            if (file.exists() && file.canExecute()) {
-                return file.getAbsolutePath();
+            File f = new File(dir, cmd);
+            if (f.exists() && f.canExecute()) {
+                return f.getAbsolutePath();
             }
         }
 
         return null;
     }
 
-    static void executeExternal(List<String> parts, String outputFile) {
+    static void runExternal(List<String> cmd, String outputFile) {
 
-        String cmd = parts.get(0);
+        String exe = cmd.get(0);
 
-        String path = findExecutable(cmd);
-
-        if (path == null) {
-            System.out.println(String.join(" ", parts) + ": command not found");
+        if (findExecutable(exe) == null) {
+            System.out.println(String.join(" ", cmd) + ": command not found");
             return;
         }
 
         try {
 
-            List<String> command = new ArrayList<>(parts);
-
-            ProcessBuilder pb = new ProcessBuilder(command);
+            ProcessBuilder pb = new ProcessBuilder(cmd);
 
             if (outputFile != null) {
                 pb.redirectOutput(new File(outputFile));
@@ -163,8 +169,8 @@ public class Main {
 
             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
 
-            Process process = pb.start();
-            process.waitFor();
+            Process p = pb.start();
+            p.waitFor();
 
         } catch (Exception e) {
             System.out.println("Error executing command");
@@ -174,7 +180,7 @@ public class Main {
     static List<String> tokenize(String input) {
 
         List<String> result = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
+        StringBuilder cur = new StringBuilder();
 
         boolean inSingle = false;
         boolean inDouble = false;
@@ -188,7 +194,7 @@ public class Main {
                 if (c == '\'') {
                     inSingle = false;
                 } else {
-                    current.append(c);
+                    cur.append(c);
                 }
                 continue;
             }
@@ -197,9 +203,9 @@ public class Main {
 
                 if (escape) {
                     if (c == '"' || c == '\\') {
-                        current.append(c);
+                        cur.append(c);
                     } else {
-                        current.append('\\').append(c);
+                        cur.append('\\').append(c);
                     }
                     escape = false;
                     continue;
@@ -215,12 +221,12 @@ public class Main {
                     continue;
                 }
 
-                current.append(c);
+                cur.append(c);
                 continue;
             }
 
             if (escape) {
-                current.append(c);
+                cur.append(c);
                 escape = false;
                 continue;
             }
@@ -241,17 +247,17 @@ public class Main {
             }
 
             if (c == ' ') {
-                if (current.length() > 0) {
-                    result.add(current.toString());
-                    current.setLength(0);
+                if (cur.length() > 0) {
+                    result.add(cur.toString());
+                    cur.setLength(0);
                 }
             } else {
-                current.append(c);
+                cur.append(c);
             }
         }
 
-        if (current.length() > 0) {
-            result.add(current.toString());
+        if (cur.length() > 0) {
+            result.add(cur.toString());
         }
 
         return result;
