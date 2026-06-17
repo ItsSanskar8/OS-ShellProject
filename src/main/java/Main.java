@@ -13,10 +13,19 @@ public class Main {
             System.out.flush();
 
             // Read user command
-            String input = scanner.nextLine();
+            String input = scanner.nextLine().trim();
 
-            // Print command not found message
-            System.out.println(input + ": command not found");
+            // Exit builtin
+            if (input.equals("exit")) {
+                break;
+            }
+
+            // Command not found
+            if (!input.isEmpty()) {
+                System.out.println(input + ": command not found");
+            }
         }
+
+        scanner.close();
     }
 }
