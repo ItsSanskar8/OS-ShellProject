@@ -73,28 +73,24 @@ public class Main {
                         continue;
                     }
 
-                    String commonPrefix = longestCommonPrefix(candidates);
-
-                    if (commonPrefix.length() > prefix.length()) {
-                        String suffix = commonPrefix.substring(prefix.length());
-                        buffer.append(suffix);
-                        System.out.print(suffix);
-
-                        if (candidates.size() == 1) {
-                            buffer.append(' ');
-                            System.out.print(' ');
-                        }
-
-                        System.out.flush();
-                    } else if (candidates.size() == 1) {
+                    if (candidates.size() == 1) {
                         String match = candidates.get(0);
                         String suffix = match.substring(prefix.length());
                         buffer.append(suffix).append(' ');
                         System.out.print(suffix + " ");
                         System.out.flush();
                     } else {
-                        System.out.print("\u0007");
-                        System.out.flush();
+                        String commonPrefix = longestCommonPrefix(candidates);
+
+                        if (commonPrefix.length() > prefix.length()) {
+                            String suffix = commonPrefix.substring(prefix.length());
+                            buffer.append(suffix);
+                            System.out.print(suffix);
+                            System.out.flush();
+                        } else {
+                            System.out.print("\u0007");
+                            System.out.flush();
+                        }
                     }
                 }
 
