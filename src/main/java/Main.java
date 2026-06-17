@@ -175,11 +175,28 @@ public class Main {
             }
 
             if (inDouble) {
+
+                if (escape) {
+                    if (c == '"' || c == '\\') {
+                        current.append(c);
+                    } else {
+                        current.append('\\').append(c);
+                    }
+                    escape = false;
+                    continue;
+                }
+
+                if (c == '\\') {
+                    escape = true;
+                    continue;
+                }
+
                 if (c == '"') {
                     inDouble = false;
-                } else {
-                    current.append(c);
+                    continue;
                 }
+
+                current.append(c);
                 continue;
             }
 
