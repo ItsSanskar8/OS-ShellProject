@@ -584,21 +584,25 @@ public class Main {
 
         for (Job job : new ArrayList<>(jobs)) {
             if (job.isRunning()) {
-                sb.append("[").append(job.id).append("] Running ").append(job.command).append("\n");
+                sb.append("[")
+                  .append(job.id)
+                  .append("]+  Running                 ")
+                  .append(job.command)
+                  .append(" &")
+                  .append("\r\n");
             }
         }
 
-        String output = sb.toString();
-
-        if (output.isEmpty()) {
+        if (sb.length() == 0) {
             return;
         }
 
-        if (output.endsWith("\n")) {
-            output = output.substring(0, output.length() - 1);
+        if (stdoutFile == null) {
+            System.out.print(sb.toString());
+            System.out.flush();
+        } else {
+            writeToFile(sb.toString(), stdoutFile, stdoutAppend);
         }
-
-        writeStdout(output, stdoutFile, stdoutAppend);
     }
 
     private static boolean isBuiltin(String command) {
