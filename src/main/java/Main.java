@@ -47,6 +47,9 @@ public class Main {
 
     private static List<JobInfo> backgroundJobs = new ArrayList<>();
 
+    private static String lastCompletionPrefix = null;
+    private static List<String> lastCompletionMatches = new ArrayList<>();
+
     private static List<String> parseCommand(String input) {
         List<String> args = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -547,60 +550,126 @@ public class Main {
         String currentWord = line.substring(start);
         String beforeWord = line.substring(0, start);
 
-        // Only complete command name position
-        if (beforeWord.trim().isEmpty()) {
-            List<String> matches = new ArrayList<>();
+        if (!beforeWord.trim().isEmpty()) {
+            System.out.print("\u0007");
+            System.out.flush();
+            return;
+        }
 
-            // 1. Builtins first
-            List<String> builtins = java.util.Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
-            for (String builtin : builtins) {
-                if (builtin.startsWith(currentWord)) {
-                    matches.add(builtin);
-                }
+        List<String> matches = new ArrayList<>();
+
+        // Builtins first
+        List<String> builtins = java.util.Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
+        for (String builtin : builtins) {
+            if (builtin.startsWith(currentWord)) {
+                matches.add(builtin);
             }
+        }
 
-            // 2. If no builtin match, search executables in PATH
-            if (matches.isEmpty()) {
-                String path = System.getenv("PATH");
+        // If no builtin match, search executables in PATH
+        if (matches.isEmpty()) {
+            String path = System.getenv("PATH");
 
-                if (path != null) {
-                    String[] dirs = path.split(File.pathSeparator);
+            if (path != null) {
+                String[] dirs = path.split(File.pathSeparator);
 
-                    for (String dirName : dirs) {
-                        File dir = new File(dirName);
-                        File[] files = dir.listFiles();
+                for (String dirName : dirs) {
+                    File dir = new File(dirName);
+                    File[] files = dir.listFiles();
 
-                        if (files == null) {
-                            continue;
-                        }
+                    if (files == null) {
+                        continue;
+                    }
 
-                        for (File file : files) {
-                            String name = file.getName();
+                    for (File file : files) {
+                        String name = file.getName();
 
-                            if (name.startsWith(currentWord) && file.isFile() && file.canExecute()) {
-                                if (!matches.contains(name)) {
-                                    matches.add(name);
-                                }
+                        if (name.startsWith(currentWord) && file.isFile() && file.canExecute()) {
+                            if (!matches.contains(name)) {
+                                matches.add(name);
                             }
                         }
                     }
                 }
             }
+        }
 
-            if (matches.size() == 1) {
-                String replacement = matches.get(0) + " ";
-                String suffix = replacement.substring(currentWord.length());
+        java.util.Collections.sort(matches);
 
-                buffer.replace(start, buffer.length(), replacement);
-                System.out.print(suffix);
-                System.out.flush();
-                return;
+        if (matches.isEmpty()) {
+            System.out.print("\u0007");
+            System.out.flush();
+            lastCompletionPrefix = null;
+            lastCompletionMatches.clear();
+            return;
+        }
+
+        if (matches.size() == 1) {
+            String replacement = matches.get(0) + " ";
+            String suffix = replacement.substring(currentWord.length());
+
+            buffer.replace(start, buffer.length(), replacement);
+            System.out.print(suffix);
+            System.out.flush();
+
+            lastCompletionPrefix = null;
+            lastCompletionMatches.clear();
+            return;
+        }
+
+        String commonPrefix = longestCommonPrefix(matches);
+
+        if (commonPrefix.length() > currentWord.length()) {
+            String suffix = commonPrefix.substring(currentWord.length());
+
+            buffer.replace(start, buffer.length(), commonPrefix);
+            System.out.print(suffix);
+            System.out.flush();
+
+            lastCompletionPrefix = null;
+            lastCompletionMatches.clear();
+            return;
+        }
+
+        if (currentWord.equals(lastCompletionPrefix) && matches.equals(lastCompletionMatches)) {
+            System.out.print("\r\n");
+            System.out.print(String.join("  ", matches));
+            System.out.print("\r\n");
+            System.out.print("$ " + buffer.toString());
+            System.out.flush();
+            return;
+        }
+
+        lastCompletionPrefix = currentWord;
+        lastCompletionMatches = new ArrayList<>(matches);
+        System.out.print("\u0007");
+        System.out.flush();
+    }
+
+    private static String longestCommonPrefix(List<String> values) {
+        if (values.isEmpty()) {
+            return "";
+        }
+
+        String prefix = values.get(0);
+
+        for (int i = 1; i < values.size(); i++) {
+            String value = values.get(i);
+            int limit = Math.min(prefix.length(), value.length());
+            int j = 0;
+
+            while (j < limit && prefix.charAt(j) == value.charAt(j)) {
+                j++;
+            }
+
+            prefix = prefix.substring(0, j);
+
+            if (prefix.isEmpty()) {
+                break;
             }
         }
 
-        // If no completion found, ring bell.
-        System.out.print("\u0007");
-        System.out.flush();
+        return prefix;
     }
 
     public static void main(String[] args) throws Exception {
