@@ -468,7 +468,6 @@ public class Main {
                 break;
 
             case "jobs":
-                reapCompletedJobsSilently();
                 handleJobs(parsed.stdoutFile, parsed.stdoutAppend);
                 createEmptyFileIfNeeded(parsed.stderrFile, parsed.stderrAppend);
                 break;
@@ -583,30 +582,49 @@ public class Main {
     }
 
     private static void handleJobs(String stdoutFile, boolean stdoutAppend) {
-        StringBuilder sb = new StringBuilder();
+        List<Job> snapshot = new ArrayList<>(jobs);
+        snapshot.sort((a, b) -> Integer.compare(a.id, b.id));
 
-        for (Job job : new ArrayList<>(jobs)) {
+        StringBuilder sb = new StringBuilder();
+        List<Job> completed = new ArrayList<>();
+
+        for (Job job : snapshot) {
+            String marker = jobMarker(job.id);
+
             if (job.isRunning()) {
                 sb.append("[")
                   .append(job.id)
                   .append("]")
-                  .append(jobMarker(job.id))
+                  .append(marker)
                   .append("  Running                 ")
                   .append(job.command)
                   .append(" &")
                   .append("\r\n");
+            } else {
+                sb.append("[")
+                  .append(job.id)
+                  .append("]")
+                  .append(marker)
+                  .append("  Done                 ")
+                  .append(job.command)
+                  .append("\r\n");
+
+                completed.add(job);
             }
         }
 
-        if (sb.length() == 0) {
-            return;
+        if (sb.length() > 0) {
+            if (stdoutFile == null) {
+                System.out.print(sb.toString());
+                System.out.flush();
+            } else {
+                writeToFile(sb.toString(), stdoutFile, stdoutAppend);
+            }
         }
 
-        if (stdoutFile == null) {
-            System.out.print(sb.toString());
-            System.out.flush();
-        } else {
-            writeToFile(sb.toString(), stdoutFile, stdoutAppend);
+        for (Job job : completed) {
+            jobs.remove(job);
+            updateJobMarkersAfterRemoval(job.id);
         }
     }
 
@@ -1150,16 +1168,26 @@ public class Main {
 
     private static void updateJobMarkersAfterRemoval(int removedJobId) {
         if (removedJobId == currentJobId) {
-            if (previousJobId != -1 && isJobRunningById(previousJobId)) {
-                currentJobId = previousJobId;
-                previousJobId = -1;
-            } else {
-                currentJobId = highestRunningJobId();
-                previousJobId = -1;
-            }
-        } else if (removedJobId == previousJobId) {
-            previousJobId = -1;
+            currentJobId = highestRunningJobId();
+            previousJobId = highestRunningJobIdExcept(currentJobId);
+            return;
         }
+
+        if (removedJobId == previousJobId) {
+            previousJobId = highestRunningJobIdExcept(currentJobId);
+        }
+    }
+
+    private static int highestRunningJobIdExcept(int excludedId) {
+        int best = -1;
+
+        for (Job job : jobs) {
+            if (job.id != excludedId && job.isRunning() && job.id > best) {
+                best = job.id;
+            }
+        }
+
+        return best;
     }
 
     private static String jobMarker(int jobId) {
