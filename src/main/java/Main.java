@@ -8,6 +8,7 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;
@@ -497,8 +498,84 @@ public class Main {
         }
     }
 
+
+    private static String readLineWithCompletion() throws IOException {
+        StringBuilder buffer = new StringBuilder();
+
+        while (true) {
+            int value = System.in.read();
+
+            if (value == -1) {
+                return null;
+            }
+
+            char c = (char) value;
+
+            if (c == '\r' || c == '\n') {
+                System.out.print("\r\n");
+                System.out.flush();
+                return buffer.toString();
+            }
+
+            if (c == '\t') {
+                handleTabCompletion(buffer);
+                continue;
+            }
+
+            if (c == 127 || c == 8) {
+                if (buffer.length() > 0) {
+                    buffer.deleteCharAt(buffer.length() - 1);
+                    System.out.print("\b \b");
+                    System.out.flush();
+                }
+                continue;
+            }
+
+            buffer.append(c);
+            System.out.print(c);
+            System.out.flush();
+        }
+    }
+
+    private static void handleTabCompletion(StringBuilder buffer) {
+        String line = buffer.toString();
+
+        int start = line.length();
+        while (start > 0 && !Character.isWhitespace(line.charAt(start - 1))) {
+            start--;
+        }
+
+        String currentWord = line.substring(start);
+        String beforeWord = line.substring(0, start);
+
+        // GM9: command completion. Builtins should win.
+        if (beforeWord.trim().isEmpty()) {
+            List<String> builtins = Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
+
+            List<String> matches = new ArrayList<>();
+            for (String builtin : builtins) {
+                if (builtin.startsWith(currentWord)) {
+                    matches.add(builtin);
+                }
+            }
+
+            if (matches.size() == 1) {
+                String replacement = matches.get(0) + " ";
+                String suffix = replacement.substring(currentWord.length());
+
+                buffer.replace(start, buffer.length(), replacement);
+                System.out.print(suffix);
+                System.out.flush();
+                return;
+            }
+        }
+
+        // If no completion found, ring bell.
+        System.out.print("\u0007");
+        System.out.flush();
+    }
+
     public static void main(String[] args) throws Exception {
-        Scanner sc = new Scanner(System.in);
 
         Set<String> builtins = Set.of(
                 "exit",
