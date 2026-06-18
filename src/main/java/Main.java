@@ -23,6 +23,9 @@ public class Main {
 
     private static final List<String> commandHistory = new ArrayList<>();
 
+    private static int historyAppendStart = 0;
+    private static final String histFilePath = System.getenv("HISTFILE");
+
     private static String lastCompletionToken = null;
     private static String lastCompletionLine = null;
     private static List<String> lastCompletionDisplays = new ArrayList<>();
@@ -32,6 +35,8 @@ public class Main {
     );
 
     public static void main(String[] args) throws Exception {
+        loadHistoryFromHistFileOnStartup();
+
         while (true) {
             reapCompletedJobs();
 
@@ -502,6 +507,7 @@ public class Main {
         String command = parsed.parts.get(0);
 
         if (!background && command.equals("exit")) {
+            saveHistoryToHistFileOnExit();
             System.exit(0);
         }
 
@@ -560,6 +566,23 @@ public class Main {
     }
 
     private static void handleHistory(List<String> parts, String stdoutFile, boolean stdoutAppend) {
+        if (parts.size() >= 3 && parts.get(1).equals("-r")) {
+            readHistoryFile(parts.get(2));
+            return;
+        }
+
+        if (parts.size() >= 3 && parts.get(1).equals("-w")) {
+            writeHistoryFile(parts.get(2), false, 0);
+            historyAppendStart = commandHistory.size();
+            return;
+        }
+
+        if (parts.size() >= 3 && parts.get(1).equals("-a")) {
+            writeHistoryFile(parts.get(2), true, historyAppendStart);
+            historyAppendStart = commandHistory.size();
+            return;
+        }
+
         int start = 0;
 
         if (parts.size() >= 2) {
@@ -587,6 +610,55 @@ public class Main {
         } else {
             writeToFile(sb.toString(), stdoutFile, stdoutAppend);
         }
+    }
+
+    private static void loadHistoryFromHistFileOnStartup() {
+        if (histFilePath == null || histFilePath.isEmpty()) {
+            return;
+        }
+
+        readHistoryFile(histFilePath);
+        historyAppendStart = commandHistory.size();
+    }
+
+    private static void saveHistoryToHistFileOnExit() {
+        if (histFilePath == null || histFilePath.isEmpty()) {
+            return;
+        }
+
+        writeHistoryFile(histFilePath, true, historyAppendStart);
+        historyAppendStart = commandHistory.size();
+    }
+
+    private static void readHistoryFile(String path) {
+        try {
+            File file = resolveFile(path);
+
+            if (!file.exists()) {
+                return;
+            }
+
+            List<String> lines = java.nio.file.Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+
+            for (String line : lines) {
+                if (!line.isEmpty()) {
+                    commandHistory.add(line);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void writeHistoryFile(String path, boolean append, int startIndex) {
+        StringBuilder sb = new StringBuilder();
+
+        int start = Math.max(0, Math.min(startIndex, commandHistory.size()));
+
+        for (int i = start; i < commandHistory.size(); i++) {
+            sb.append(commandHistory.get(i)).append("\n");
+        }
+
+        writeToFile(sb.toString(), path, append);
     }
 
     private static void handleComplete(List<String> parts, String stdoutFile, boolean stdoutAppend) {
