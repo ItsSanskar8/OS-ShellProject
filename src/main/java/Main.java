@@ -658,7 +658,7 @@ public class Main {
 
             if (background) {
                 int jobId = nextJobId();
-                jobs.add(new Job(jobId, originalInput.trim(), List.of(process)));
+                jobs.add(new Job(jobId, cleanBackgroundCommand(originalInput), List.of(process)));
                 printLine("[" + jobId + "] " + process.pid());
             } else {
                 process.waitFor();
@@ -675,7 +675,7 @@ public class Main {
             worker.start();
 
             int jobId = nextJobId();
-            Job job = new Job(jobId, originalInput.trim(), new ArrayList<>());
+            Job job = new Job(jobId, cleanBackgroundCommand(originalInput), new ArrayList<>());
             job.workerThread = worker;
             jobs.add(job);
 
@@ -1094,7 +1094,29 @@ public class Main {
     }
 
     private static void reapCompletedJobs() {
-        jobs.removeIf(job -> !job.isRunning());
+        List<Job> completed = new ArrayList<>();
+
+        for (Job job : jobs) {
+            if (!job.isRunning()) {
+                completed.add(job);
+            }
+        }
+
+        for (Job job : completed) {
+            System.out.print("[" + job.id + "]+  Done                 " + job.command + "\r\n");
+            System.out.flush();
+            jobs.remove(job);
+        }
+    }
+
+    private static String cleanBackgroundCommand(String command) {
+        String cleaned = command.trim();
+
+        if (cleaned.endsWith("&")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+
+        return cleaned;
     }
 
     private static class CompletionContext {
