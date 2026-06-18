@@ -21,12 +21,14 @@ public class Main {
     private static int previousJobId = -1;
     private static final Map<String, String> completers = new HashMap<>();
 
+    private static final List<String> commandHistory = new ArrayList<>();
+
     private static String lastCompletionToken = null;
     private static String lastCompletionLine = null;
     private static List<String> lastCompletionDisplays = new ArrayList<>();
 
     private static final List<String> BUILTINS = Arrays.asList(
-            "echo", "exit", "type", "pwd", "cd", "jobs", "complete"
+            "echo", "exit", "type", "pwd", "cd", "jobs", "complete", "history"
     );
 
     public static void main(String[] args) throws Exception {
@@ -48,6 +50,8 @@ public class Main {
                 continue;
             }
 
+            commandHistory.add(input);
+
             executeLine(input);
 
             List<String> afterParts = parseCommand(input);
@@ -60,6 +64,9 @@ public class Main {
     private static String readLineWithCompletion() throws Exception {
         StringBuilder buffer = new StringBuilder();
         resetCompletionState();
+
+        int historyCursor = commandHistory.size();
+        int renderedLength = 0;
 
         while (true) {
             int value = System.in.read();
@@ -77,8 +84,46 @@ public class Main {
                 return buffer.toString();
             }
 
+            // Arrow keys arrive as ESC [ A / ESC [ B
+            if (c == 27) {
+                int second = System.in.read();
+
+                if (second == '[') {
+                    int third = System.in.read();
+
+                    if (third == 'A') { // UP
+                        if (!commandHistory.isEmpty() && historyCursor > 0) {
+                            historyCursor--;
+                            String recalled = commandHistory.get(historyCursor);
+                            buffer.setLength(0);
+                            buffer.append(recalled);
+                            renderedLength = redrawInputLine(buffer.toString(), renderedLength);
+                        }
+                        continue;
+                    }
+
+                    if (third == 'B') { // DOWN
+                        if (!commandHistory.isEmpty() && historyCursor < commandHistory.size() - 1) {
+                            historyCursor++;
+                            String recalled = commandHistory.get(historyCursor);
+                            buffer.setLength(0);
+                            buffer.append(recalled);
+                            renderedLength = redrawInputLine(buffer.toString(), renderedLength);
+                        } else if (historyCursor < commandHistory.size()) {
+                            historyCursor = commandHistory.size();
+                            buffer.setLength(0);
+                            renderedLength = redrawInputLine("", renderedLength);
+                        }
+                        continue;
+                    }
+                }
+
+                continue;
+            }
+
             if (c == '\t') {
                 handleTabCompletion(buffer);
+                renderedLength = buffer.length();
                 continue;
             }
 
@@ -87,10 +132,12 @@ public class Main {
 
                 if (buffer.length() > 0) {
                     buffer.deleteCharAt(buffer.length() - 1);
+                    renderedLength = Math.max(0, renderedLength - 1);
                     System.out.print("\b \b");
                     System.out.flush();
                 }
 
+                historyCursor = commandHistory.size();
                 continue;
             }
 
@@ -103,10 +150,25 @@ public class Main {
             }
 
             resetCompletionState();
+            historyCursor = commandHistory.size();
             buffer.append(c);
+            renderedLength++;
             System.out.print(c);
             System.out.flush();
         }
+    }
+
+    private static int redrawInputLine(String text, int oldLength) {
+        StringBuilder clear = new StringBuilder();
+
+        for (int i = 0; i < oldLength; i++) {
+            clear.append(' ');
+        }
+
+        System.out.print("\r$ " + clear + "\r$ " + text);
+        System.out.flush();
+
+        return text.length();
     }
 
     private static void handleTabCompletion(StringBuilder buffer) {
@@ -487,8 +549,43 @@ public class Main {
                 createEmptyFileIfNeeded(parsed.stderrFile, parsed.stderrAppend);
                 break;
 
+            case "history":
+                createEmptyFileIfNeeded(parsed.stderrFile, parsed.stderrAppend);
+                handleHistory(parts, parsed.stdoutFile, parsed.stdoutAppend);
+                break;
+
             default:
                 break;
+        }
+    }
+
+    private static void handleHistory(List<String> parts, String stdoutFile, boolean stdoutAppend) {
+        int start = 0;
+
+        if (parts.size() >= 2) {
+            try {
+                int n = Integer.parseInt(parts.get(1));
+                start = Math.max(0, commandHistory.size() - n);
+            } catch (NumberFormatException ignored) {
+                start = 0;
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = start; i < commandHistory.size(); i++) {
+            sb.append(String.format("%5d  %s\r\n", i + 1, commandHistory.get(i)));
+        }
+
+        if (sb.length() == 0) {
+            return;
+        }
+
+        if (stdoutFile == null) {
+            System.out.print(sb.toString());
+            System.out.flush();
+        } else {
+            writeToFile(sb.toString(), stdoutFile, stdoutAppend);
         }
     }
 
