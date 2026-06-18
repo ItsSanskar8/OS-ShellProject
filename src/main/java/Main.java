@@ -197,8 +197,13 @@ public class Main {
         String commandName = commandPosition ? currentToken : previousWords.get(0);
 
         String previousWord = "";
-        if (!commandPosition && previousWords.size() >= 2) {
-            previousWord = previousWords.get(previousWords.size() - 1);
+
+        if (!commandPosition) {
+            if (!currentToken.isEmpty()) {
+                previousWord = previousWords.isEmpty() ? "" : previousWords.get(previousWords.size() - 1);
+            } else {
+                previousWord = previousWords.size() >= 2 ? previousWords.get(previousWords.size() - 1) : "";
+            }
         }
 
         return new CompletionContext(line, currentToken, tokenStart, commandPosition, commandName, previousWord);
