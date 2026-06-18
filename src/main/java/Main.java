@@ -580,21 +580,49 @@ public class Main {
     }
 
     private static void handleJobs(String stdoutFile, boolean stdoutAppend) {
-        StringBuilder sb = new StringBuilder();
+        List<Job> runningJobs = new ArrayList<>();
 
         for (Job job : new ArrayList<>(jobs)) {
             if (job.isRunning()) {
-                sb.append("[")
-                  .append(job.id)
-                  .append("]+  Running                 ")
-                  .append(job.command)
-                  .append(" &")
-                  .append("\r\n");
+                runningJobs.add(job);
             }
         }
 
-        if (sb.length() == 0) {
+        if (runningJobs.isEmpty()) {
             return;
+        }
+
+        int currentJobId = -1;
+        int previousJobId = -1;
+
+        for (Job job : runningJobs) {
+            if (job.id > currentJobId) {
+                previousJobId = currentJobId;
+                currentJobId = job.id;
+            } else if (job.id > previousJobId) {
+                previousJobId = job.id;
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Job job : runningJobs) {
+            String marker = " ";
+
+            if (job.id == currentJobId) {
+                marker = "+";
+            } else if (job.id == previousJobId) {
+                marker = "-";
+            }
+
+            sb.append("[")
+              .append(job.id)
+              .append("]")
+              .append(marker)
+              .append("  Running                 ")
+              .append(job.command)
+              .append(" &")
+              .append("\r\n");
         }
 
         if (stdoutFile == null) {
