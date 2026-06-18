@@ -684,6 +684,12 @@ public class Main {
         }
 
         List<List<String>> commands = splitPipeline(parsed.parts);
+
+        if (allExternalCommands(commands)) {
+            runStreamingExternalPipeline(commands, parsed);
+            return;
+        }
+
         byte[] input = new byte[0];
 
         for (int i = 0; i < commands.size(); i++) {
@@ -700,6 +706,73 @@ public class Main {
         } else {
             System.out.print(output);
             System.out.flush();
+        }
+    }
+
+    private static boolean allExternalCommands(List<List<String>> commands) {
+        for (List<String> commandParts : commands) {
+            if (commandParts.isEmpty()) {
+                return false;
+            }
+
+            if (isBuiltin(commandParts.get(0))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void runStreamingExternalPipeline(List<List<String>> commands, ParsedCommand parsed) {
+        try {
+            List<ProcessBuilder> builders = new ArrayList<>();
+
+            for (List<String> commandParts : commands) {
+                String command = commandParts.get(0);
+
+                if (findExecutable(command) == null) {
+                    writeStderr(command + ": command not found", parsed.stderrFile, parsed.stderrAppend);
+                    return;
+                }
+
+                ProcessBuilder pb = new ProcessBuilder(commandParts);
+                pb.directory(currentDirectory);
+
+                if (parsed.stderrFile != null) {
+                    File errFile = resolveFile(parsed.stderrFile);
+                    pb.redirectError(parsed.stderrAppend
+                            ? ProcessBuilder.Redirect.appendTo(errFile)
+                            : ProcessBuilder.Redirect.to(errFile));
+                } else {
+                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                builders.add(pb);
+            }
+
+            ProcessBuilder lastBuilder = builders.get(builders.size() - 1);
+
+            if (parsed.stdoutFile != null) {
+                File outFile = resolveFile(parsed.stdoutFile);
+                lastBuilder.redirectOutput(parsed.stdoutAppend
+                        ? ProcessBuilder.Redirect.appendTo(outFile)
+                        : ProcessBuilder.Redirect.to(outFile));
+            } else {
+                lastBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            List<Process> processes = ProcessBuilder.startPipeline(builders);
+
+            Process lastProcess = processes.get(processes.size() - 1);
+            lastProcess.waitFor();
+
+            for (int i = 0; i < processes.size() - 1; i++) {
+                Process process = processes.get(i);
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+            }
+        } catch (Exception ignored) {
         }
     }
 
