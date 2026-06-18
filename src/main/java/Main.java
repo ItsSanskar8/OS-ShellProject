@@ -10,7 +10,6 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Scanner;
 import java.util.Set;
 
 public class Main {
@@ -599,7 +598,7 @@ public class Main {
             System.out.print("$ ");
             System.out.flush();
 
-            String cmd = sc.nextLine();
+            String cmd = readLineWithCompletion();
 
             List<String> parts = parseCommand(cmd);
 
@@ -863,6 +862,5 @@ public class Main {
             }
         }
 
-        sc.close();
     }
 }
