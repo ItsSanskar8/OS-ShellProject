@@ -49,6 +49,11 @@ public class Main {
             }
 
             executeLine(input);
+
+            List<String> afterParts = parseCommand(input);
+            if (!afterParts.isEmpty() && !afterParts.get(0).equals("jobs")) {
+                reapCompletedJobsBeforePrompt();
+            }
         }
     }
 
@@ -1125,6 +1130,17 @@ public class Main {
             id++;
         }
         return id;
+    }
+
+    private static void reapCompletedJobsBeforePrompt() {
+        // Give background processes like "cat fifo &" a tiny moment to exit
+        // after a foreground command has completed.
+        try {
+            Thread.sleep(50);
+        } catch (InterruptedException ignored) {
+        }
+
+        reapCompletedJobs();
     }
 
     private static void reapCompletedJobs() {
