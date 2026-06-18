@@ -47,6 +47,9 @@ public class Main {
 
     private static List<JobInfo> backgroundJobs = new ArrayList<>();
 
+    private static String lastCompletionToken = null;
+    private static List<String> lastCompletionDisplays = new ArrayList<>();
+
     private static String lastCompletionPrefix = null;
     private static List<String> lastCompletionMatches = new ArrayList<>();
 
@@ -525,6 +528,7 @@ public class Main {
             }
 
             if (c == 127 || c == 8) {
+                resetCompletionState();
                 if (buffer.length() > 0) {
                     buffer.deleteCharAt(buffer.length() - 1);
                     System.out.print("\b \b");
@@ -533,117 +537,194 @@ public class Main {
                 continue;
             }
 
+            resetCompletionState();
             buffer.append(c);
             System.out.print(c);
             System.out.flush();
         }
     }
 
+    private static class TabCandidate {
+        String display;
+        String lcpValue;
+        String replacement;
+
+        TabCandidate(String display, String lcpValue, String replacement) {
+            this.display = display;
+            this.lcpValue = lcpValue;
+            this.replacement = replacement;
+        }
+    }
+
+    private static void resetCompletionState() {
+        lastCompletionToken = null;
+        lastCompletionDisplays.clear();
+    }
+
     private static void handleTabCompletion(StringBuilder buffer) {
         String line = buffer.toString();
 
-        int start = line.length();
-        while (start > 0 && !Character.isWhitespace(line.charAt(start - 1))) {
-            start--;
+        int tokenStart = line.length();
+        while (tokenStart > 0 && !Character.isWhitespace(line.charAt(tokenStart - 1))) {
+            tokenStart--;
         }
 
-        String currentWord = line.substring(start);
-        String beforeWord = line.substring(0, start);
+        String currentToken = line.substring(tokenStart);
+        String beforeToken = line.substring(0, tokenStart);
+        boolean commandPosition = beforeToken.trim().isEmpty();
 
-        if (!beforeWord.trim().isEmpty()) {
+        List<TabCandidate> candidates;
+
+        if (commandPosition) {
+            candidates = getCommandCandidates(currentToken);
+        } else {
+            candidates = getPathCandidates(currentToken);
+        }
+
+        candidates.sort((a, b) -> a.display.compareTo(b.display));
+
+        if (candidates.isEmpty()) {
             System.out.print("\u0007");
             System.out.flush();
+            resetCompletionState();
             return;
         }
 
-        List<String> matches = new ArrayList<>();
+        if (candidates.size() == 1) {
+            TabCandidate candidate = candidates.get(0);
+            String suffix = candidate.replacement.substring(currentToken.length());
 
-        // Builtins first
-        List<String> builtins = java.util.Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
-        for (String builtin : builtins) {
-            if (builtin.startsWith(currentWord)) {
-                matches.add(builtin);
-            }
-        }
-
-        // If no builtin match, search executables in PATH
-        if (matches.isEmpty()) {
-            String path = System.getenv("PATH");
-
-            if (path != null) {
-                String[] dirs = path.split(File.pathSeparator);
-
-                for (String dirName : dirs) {
-                    File dir = new File(dirName);
-                    File[] files = dir.listFiles();
-
-                    if (files == null) {
-                        continue;
-                    }
-
-                    for (File file : files) {
-                        String name = file.getName();
-
-                        if (name.startsWith(currentWord) && file.isFile() && file.canExecute()) {
-                            if (!matches.contains(name)) {
-                                matches.add(name);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        java.util.Collections.sort(matches);
-
-        if (matches.isEmpty()) {
-            System.out.print("\u0007");
-            System.out.flush();
-            lastCompletionPrefix = null;
-            lastCompletionMatches.clear();
-            return;
-        }
-
-        if (matches.size() == 1) {
-            String replacement = matches.get(0) + " ";
-            String suffix = replacement.substring(currentWord.length());
-
-            buffer.replace(start, buffer.length(), replacement);
+            buffer.replace(tokenStart, buffer.length(), candidate.replacement);
             System.out.print(suffix);
             System.out.flush();
 
-            lastCompletionPrefix = null;
-            lastCompletionMatches.clear();
+            resetCompletionState();
             return;
         }
 
-        String commonPrefix = longestCommonPrefix(matches);
+        List<String> lcpValues = new ArrayList<>();
+        for (TabCandidate candidate : candidates) {
+            lcpValues.add(candidate.lcpValue);
+        }
 
-        if (commonPrefix.length() > currentWord.length()) {
-            String suffix = commonPrefix.substring(currentWord.length());
+        String commonPrefix = longestCommonPrefix(lcpValues);
 
-            buffer.replace(start, buffer.length(), commonPrefix);
+        if (commonPrefix.length() > currentToken.length()) {
+            String suffix = commonPrefix.substring(currentToken.length());
+
+            buffer.replace(tokenStart, buffer.length(), commonPrefix);
             System.out.print(suffix);
             System.out.flush();
 
-            lastCompletionPrefix = null;
-            lastCompletionMatches.clear();
+            resetCompletionState();
             return;
         }
 
-        if (currentWord.equals(lastCompletionPrefix) && matches.equals(lastCompletionMatches)) {
+        List<String> displays = new ArrayList<>();
+        for (TabCandidate candidate : candidates) {
+            displays.add(candidate.display);
+        }
+
+        if (currentToken.equals(lastCompletionToken) && displays.equals(lastCompletionDisplays)) {
             System.out.print("\r\n");
-            System.out.print(String.join("  ", matches));
+            System.out.print(String.join("  ", displays));
             System.out.print("\r\n");
             System.out.print("$ " + buffer.toString());
             System.out.flush();
             return;
         }
 
-        lastCompletionPrefix = currentWord;
-        lastCompletionMatches = new ArrayList<>(matches);
+        lastCompletionToken = currentToken;
+        lastCompletionDisplays = new ArrayList<>(displays);
+
         System.out.print("\u0007");
         System.out.flush();
+    }
+
+    private static List<TabCandidate> getCommandCandidates(String prefix) {
+        List<TabCandidate> candidates = new ArrayList<>();
+
+        List<String> builtins = java.util.Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
+
+        for (String builtin : builtins) {
+            if (builtin.startsWith(prefix)) {
+                candidates.add(new TabCandidate(builtin, builtin, builtin + " "));
+            }
+        }
+
+        // Builtins should win over PATH executables.
+        if (!candidates.isEmpty()) {
+            return candidates;
+        }
+
+        String path = System.getenv("PATH");
+        if (path == null || path.isEmpty()) {
+            return candidates;
+        }
+
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        for (String dirName : path.split(File.pathSeparator)) {
+            File dir = new File(dirName);
+            File[] files = dir.listFiles();
+
+            if (files == null) {
+                continue;
+            }
+
+            for (File file : files) {
+                String name = file.getName();
+
+                if (name.startsWith(prefix) && file.isFile() && file.canExecute() && !seen.contains(name)) {
+                    seen.add(name);
+                    candidates.add(new TabCandidate(name, name, name + " "));
+                }
+            }
+        }
+
+        return candidates;
+    }
+
+    private static List<TabCandidate> getPathCandidates(String token) {
+        List<TabCandidate> candidates = new ArrayList<>();
+
+        int slashIndex = token.lastIndexOf('/');
+
+        String dirPart;
+        String prefix;
+
+        if (slashIndex >= 0) {
+            dirPart = token.substring(0, slashIndex + 1);
+            prefix = token.substring(slashIndex + 1);
+        } else {
+            dirPart = "";
+            prefix = token;
+        }
+
+        File searchDir = dirPart.isEmpty() ? new File(".") : new File(dirPart);
+        File[] entries = searchDir.listFiles();
+
+        if (entries == null) {
+            return candidates;
+        }
+
+        for (File entry : entries) {
+            String name = entry.getName();
+
+            if (!name.startsWith(prefix)) {
+                continue;
+            }
+
+            String base = dirPart + name;
+
+            if (entry.isDirectory()) {
+                candidates.add(new TabCandidate(base + "/", base, base + "/"));
+            } else {
+                candidates.add(new TabCandidate(base, base, base + " "));
+            }
+        }
+
+        return candidates;
     }
 
     private static String longestCommonPrefix(List<String> values) {
