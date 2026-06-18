@@ -547,14 +547,43 @@ public class Main {
         String currentWord = line.substring(start);
         String beforeWord = line.substring(0, start);
 
-        // GM9: command completion. Builtins should win.
+        // Only complete command name position
         if (beforeWord.trim().isEmpty()) {
-            List<String> builtins = Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
-
             List<String> matches = new ArrayList<>();
+
+            // 1. Builtins first
+            List<String> builtins = java.util.Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs");
             for (String builtin : builtins) {
                 if (builtin.startsWith(currentWord)) {
                     matches.add(builtin);
+                }
+            }
+
+            // 2. If no builtin match, search executables in PATH
+            if (matches.isEmpty()) {
+                String path = System.getenv("PATH");
+
+                if (path != null) {
+                    String[] dirs = path.split(File.pathSeparator);
+
+                    for (String dirName : dirs) {
+                        File dir = new File(dirName);
+                        File[] files = dir.listFiles();
+
+                        if (files == null) {
+                            continue;
+                        }
+
+                        for (File file : files) {
+                            String name = file.getName();
+
+                            if (name.startsWith(currentWord) && file.isFile() && file.canExecute()) {
+                                if (!matches.contains(name)) {
+                                    matches.add(name);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
