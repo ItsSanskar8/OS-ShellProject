@@ -16,6 +16,9 @@ public class Main {
     private static File currentDirectory = new File(System.getProperty("user.dir"));
 
     private static final List<Job> jobs = new ArrayList<>();
+
+    private static int currentJobId = -1;
+    private static int previousJobId = -1;
     private static final Map<String, String> completers = new HashMap<>();
 
     private static String lastCompletionToken = null;
@@ -465,7 +468,7 @@ public class Main {
                 break;
 
             case "jobs":
-                reapCompletedJobs();
+                reapCompletedJobsSilently();
                 handleJobs(parsed.stdoutFile, parsed.stdoutAppend);
                 createEmptyFileIfNeeded(parsed.stderrFile, parsed.stderrAppend);
                 break;
@@ -580,49 +583,23 @@ public class Main {
     }
 
     private static void handleJobs(String stdoutFile, boolean stdoutAppend) {
-        List<Job> runningJobs = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
 
         for (Job job : new ArrayList<>(jobs)) {
             if (job.isRunning()) {
-                runningJobs.add(job);
+                sb.append("[")
+                  .append(job.id)
+                  .append("]")
+                  .append(jobMarker(job.id))
+                  .append("  Running                 ")
+                  .append(job.command)
+                  .append(" &")
+                  .append("\r\n");
             }
         }
 
-        if (runningJobs.isEmpty()) {
+        if (sb.length() == 0) {
             return;
-        }
-
-        int currentJobId = -1;
-        int previousJobId = -1;
-
-        for (Job job : runningJobs) {
-            if (job.id > currentJobId) {
-                previousJobId = currentJobId;
-                currentJobId = job.id;
-            } else if (job.id > previousJobId) {
-                previousJobId = job.id;
-            }
-        }
-
-        StringBuilder sb = new StringBuilder();
-
-        for (Job job : runningJobs) {
-            String marker = " ";
-
-            if (job.id == currentJobId) {
-                marker = "+";
-            } else if (job.id == previousJobId) {
-                marker = "-";
-            }
-
-            sb.append("[")
-              .append(job.id)
-              .append("]")
-              .append(marker)
-              .append("  Running                 ")
-              .append(job.command)
-              .append(" &")
-              .append("\r\n");
         }
 
         if (stdoutFile == null) {
@@ -690,6 +667,7 @@ public class Main {
 
             if (background) {
                 int jobId = nextJobId();
+                updateJobMarkersOnStart(jobId);
                 jobs.add(new Job(jobId, cleanBackgroundCommand(originalInput), List.of(process)));
                 printLine("[" + jobId + "] " + process.pid());
             } else {
@@ -709,6 +687,7 @@ public class Main {
             int jobId = nextJobId();
             Job job = new Job(jobId, cleanBackgroundCommand(originalInput), new ArrayList<>());
             job.workerThread = worker;
+            updateJobMarkersOnStart(jobId);
             jobs.add(job);
 
             printLine("[" + jobId + "] " + worker.getId());
@@ -1135,10 +1114,86 @@ public class Main {
         }
 
         for (Job job : completed) {
-            System.out.print("[" + job.id + "]+  Done                 " + job.command + "\r\n");
+            String marker = jobMarker(job.id);
+            System.out.print("[" + job.id + "]" + marker + "  Done                 " + job.command + "\r\n");
             System.out.flush();
+
             jobs.remove(job);
+            updateJobMarkersAfterRemoval(job.id);
         }
+    }
+
+    private static void reapCompletedJobsSilently() {
+        List<Job> completed = new ArrayList<>();
+
+        for (Job job : jobs) {
+            if (!job.isRunning()) {
+                completed.add(job);
+            }
+        }
+
+        for (Job job : completed) {
+            jobs.remove(job);
+            updateJobMarkersAfterRemoval(job.id);
+        }
+    }
+
+    private static void updateJobMarkersOnStart(int jobId) {
+        if (currentJobId != -1 && isJobRunningById(currentJobId)) {
+            previousJobId = currentJobId;
+        } else {
+            previousJobId = -1;
+        }
+
+        currentJobId = jobId;
+    }
+
+    private static void updateJobMarkersAfterRemoval(int removedJobId) {
+        if (removedJobId == currentJobId) {
+            if (previousJobId != -1 && isJobRunningById(previousJobId)) {
+                currentJobId = previousJobId;
+                previousJobId = -1;
+            } else {
+                currentJobId = highestRunningJobId();
+                previousJobId = -1;
+            }
+        } else if (removedJobId == previousJobId) {
+            previousJobId = -1;
+        }
+    }
+
+    private static String jobMarker(int jobId) {
+        if (jobId == currentJobId) {
+            return "+";
+        }
+
+        if (jobId == previousJobId) {
+            return "-";
+        }
+
+        return " ";
+    }
+
+    private static boolean isJobRunningById(int jobId) {
+        for (Job job : jobs) {
+            if (job.id == jobId && job.isRunning()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int highestRunningJobId() {
+        int best = -1;
+
+        for (Job job : jobs) {
+            if (job.isRunning() && job.id > best) {
+                best = job.id;
+            }
+        }
+
+        return best;
     }
 
     private static String cleanBackgroundCommand(String command) {
