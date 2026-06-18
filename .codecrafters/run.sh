@@ -1,11 +1,3 @@
 #!/bin/sh
-#
-# This script is used to run your program on CodeCrafters
-#
-# This runs after .codecrafters/compile.sh
-#
-# Learn more: https://codecrafters.io/program-interface
-
-set -e # Exit on failure
-
-exec java --enable-native-access=ALL-UNNAMED --enable-preview -jar /tmp/codecrafters-build-shell-java/codecrafters-shell.jar "$@"
+set -e
+exec java --enable-preview -cp target/classes Main
