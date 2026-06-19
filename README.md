@@ -1,57 +1,135 @@
-[![progress-banner](https://backend.codecrafters.io/progress/shell/c6ae9fd8-3402-4249-9131-6fb68122d4d9)](https://app.codecrafters.io/users/ItsSanskar8?r=2qF)
+---
 
-# Java Shell — CodeCrafters Build Your Own Shell
+## System Design & Execution Flow
 
-A POSIX-inspired shell implementation built in **Java** for the [CodeCrafters Build Your Own Shell](https://codecrafters.io) challenge.
+This shell is built around a classic REPL loop:
 
-This project implements a custom command-line shell capable of parsing user input, running external programs, handling built-in commands, supporting pipelines, redirections, tab completion, background jobs, command history, programmable completion, and shell variable expansion.
+```text
+Read command → Parse tokens → Expand variables → Detect builtins/external commands → Execute → Print result → Show next prompt
+```
 
 ---
 
-## Features
+## 1. High-Level Shell Architecture
 
-### Core Shell Features
+```mermaid
+flowchart TD
+    A[User Input] --> B[Interactive REPL]
+    B --> C[Command Parser]
 
-* Interactive REPL with `$` prompt
-* External command execution using `PATH`
-* Built-in command support
-* Command parsing with:
+    C --> D[Variable Expansion]
+    D --> E{Command Type}
 
-  * single quotes
-  * double quotes
-  * escape characters
-  * whitespace handling
-* Absolute and relative path support
+    E -->|Builtin| F[Builtin Executor]
+    E -->|External Command| G[ProcessBuilder Executor]
+    E -->|Pipeline| H[Pipeline Engine]
+    E -->|Background Job| I[Job Manager]
 
-### Built-in Commands
+    F --> J[Output / Redirection Handler]
+    G --> J
+    H --> J
+    I --> K[Jobs Table]
 
-Supported built-ins include:
-
-* `echo`
-* `exit`
-* `type`
-* `pwd`
-* `cd`
-* `jobs`
-* `complete`
-* `history`
-* `declare`
-
-### Redirection
-
-Supports stdout and stderr redirection:
-
-```bash
-echo hello > file.txt
-echo hello 1> file.txt
-echo hello >> file.txt
-invalid_command 2> error.txt
-invalid_command 2>> error.txt
+    J --> L[Next Prompt]
+    K --> L
 ```
 
-### Pipelines
+The shell keeps track of:
 
-Supports single and multi-command pipelines:
+* current working directory
+* built-in commands
+* shell variables
+* command history
+* background jobs
+* programmable completion rules
+
+---
+
+## 2. Autocompletion Engine
+
+The autocomplete engine handles `<TAB>` keypresses and chooses the correct completion strategy depending on the user input.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Shell
+    participant Completer as Completer Script
+    participant FS as File System
+
+    User->>Shell: Presses TAB
+    Shell->>Shell: Parse current input line
+
+    alt Programmable completer registered
+        Shell->>Completer: Execute script with argv + COMP_LINE / COMP_POINT
+        Completer-->>Shell: Return candidates
+    else Completing command name
+        Shell->>Shell: Match builtins
+        Shell->>FS: Scan PATH directories
+        FS-->>Shell: Return executable matches
+    else Completing file or directory
+        Shell->>FS: Scan target directory
+        FS-->>Shell: Return file/folder matches
+    end
+
+    alt Exactly one match
+        Shell-->>User: Complete token + trailing space or slash
+    else Multiple matches
+        Shell-->>User: First TAB rings bell
+        Shell-->>User: Second TAB lists all candidates
+    else No match
+        Shell-->>User: Ring bell
+    end
+```
+
+Completion supports:
+
+* built-in command completion
+* executable completion from `PATH`
+* file completion
+* nested path completion
+* directory completion
+* multiple match listing
+* longest common prefix completion
+* programmable completion using `complete -C`
+* completion in any argument position
+
+Example:
+
+```bash
+$ ech<TAB>
+$ echo 
+
+$ cat rea<TAB>
+$ cat readme.txt 
+
+$ cd proj<TAB>
+$ cd project/
+```
+
+---
+
+## 3. Pipeline Execution Flow
+
+The shell supports both built-in pipelines and streaming external pipelines.
+
+```mermaid
+flowchart LR
+    A[Command Line] --> B[Parse Pipeline]
+    B --> C{All commands external?}
+
+    C -->|Yes| D[Use ProcessBuilder.startPipeline]
+    D --> E[Stream output between processes]
+    E --> F[Wait for last process]
+
+    C -->|No| G[Run pipeline step-by-step]
+    G --> H[Capture output as bytes]
+    H --> I[Pass output to next command]
+
+    F --> J[Print final output]
+    I --> J
+```
+
+Examples:
 
 ```bash
 echo hello | wc
@@ -59,80 +137,69 @@ cat file.txt | head -n 3 | wc
 tail -f file.txt | head -n 5
 ```
 
-The implementation supports streaming pipelines for external commands, including long-running commands such as `tail -f`.
+For external commands like `tail -f file | head -n 5`, the shell uses streaming pipeline execution so long-running commands do not block the entire shell.
 
-### Background Jobs
+---
 
-Supports running commands in the background:
+## 4. Background Job Management
 
-```bash
-sleep 10 &
-jobs
+Background jobs are tracked in an internal jobs table.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Started
+    Started --> Running: command &
+    Running --> Done: process exits
+    Done --> Reaped: shell prints Done message
+    Reaped --> [*]
 ```
-
-Job handling includes:
-
-* job numbers
-* running job listing
-* completed job reaping
-* job number recycling
-* shell-style job markers: `+`, `-`, and blank marker
-
-### Tab Completion
-
-Supports command and argument completion using the `<TAB>` key.
-
-Implemented completion features:
-
-* built-in command completion
-* executable completion from `PATH`
-* filename completion
-* nested path completion
-* directory completion with trailing `/`
-* multiple match listing
-* longest common prefix completion
-* completion in any argument position
-* bell character on missing completion
 
 Example:
 
 ```bash
-cat rea<TAB>
-cd proj<TAB>
-ls r<TAB><TAB>
+$ sleep 10 &
+[1] 12345
+
+$ jobs
+[1]+  Running                 sleep 10 &
+
+$ echo done
+done
+[1]+  Done                    sleep 10
 ```
 
-### Programmable Completion
+The job system supports:
 
-Supports the `complete` builtin:
+* job numbers
+* running job display
+* completed job reaping
+* job number recycling
+* current job marker `+`
+* previous job marker `-`
 
-```bash
-complete -C /path/to/completer git
-complete -p git
-complete -r git
+---
+
+## 5. History System
+
+The shell records every executed command in memory and supports file-based history.
+
+```mermaid
+flowchart TD
+    A[Command Executed] --> B[Add to In-Memory History]
+    B --> C{History Command?}
+
+    C -->|history| D[Print history]
+    C -->|history n| E[Print last n commands]
+    C -->|history -r file| F[Read file into memory]
+    C -->|history -w file| G[Write memory to file]
+    C -->|history -a file| H[Append new entries]
+
+    B --> I{Exit with HISTFILE?}
+    I -->|Yes| J[Append session history to HISTFILE]
+    I -->|No| K[Exit normally]
 ```
 
-Implemented programmable completion features:
-
-* registering completer scripts with `complete -C`
-* printing registered completions with `complete -p`
-* removing completions with `complete -r`
-* invoking completer scripts on `<TAB>`
-* passing completion arguments:
-
-  * command name
-  * current word
-  * previous word
-* setting completion environment variables:
-
-  * `COMP_LINE`
-  * `COMP_POINT`
-* handling multiple candidates
-* longest common prefix completion
-
-### Command History
-
-Supports the `history` builtin:
+Supported commands:
 
 ```bash
 history
@@ -142,182 +209,124 @@ history -w history.txt
 history -a history.txt
 ```
 
-Implemented history features:
-
-* in-memory command history
-* limiting output with `history <n>`
-* recalling commands with arrow keys
-* executing recalled commands
-* reading history from file
-* writing history to file
-* appending new history entries
-* `HISTFILE` support on startup and exit
-
-### Shell Variables
-
-Supports the `declare` builtin:
-
-```bash
-declare name=value
-declare -p name
-```
-
-Implemented variable features:
-
-* variable declaration
-* variable inspection
-* identifier validation
-* `$VAR` expansion
-* `${VAR}` expansion
-* unset variables expanding to an empty string
-
-Example:
-
-```bash
-declare user=Sanskar
-echo Hello $user
-echo ${user}_project
-```
-
----
-
-## Tech Stack
-
-* Java
-* Maven
-* Unix process APIs
-* CodeCrafters CLI
-
----
-
-## Project Structure
+Arrow-key history navigation is also supported:
 
 ```text
-.
-├── .codecrafters/
-│   └── run.sh
-├── src/
-│   └── main/
-│       └── java/
-│           └── Main.java
-├── pom.xml
-└── README.md
+UP arrow   → previous command
+DOWN arrow → next command
+ENTER      → execute recalled command
 ```
 
 ---
 
-## Getting Started
+## 6. Shell Variable Expansion
 
-### Prerequisites
+The shell supports variable declaration and expansion.
 
-Make sure you have:
-
-* Java installed
-* Maven installed
-* CodeCrafters CLI installed
-
-Check versions:
-
-```bash
-java --version
-mvn --version
-codecrafters --version
+```mermaid
+flowchart LR
+    A[declare name=value] --> B[Store variable]
+    B --> C[Command contains $name or ${name}]
+    C --> D[Expand variable before execution]
+    D --> E[Run builtin or external command]
 ```
 
----
-
-## Run Locally
-
-Compile the project:
+Examples:
 
 ```bash
-mvn clean compile
-```
-
-Run the shell:
-
-```bash
-.codecrafters/run.sh
-```
-
-You should see:
-
-```bash
-$
-```
-
-Now you can run commands:
-
-```bash
-echo hello
-pwd
-type echo
-history
-exit
-```
-
----
-
-## Testing
-
-Submit to CodeCrafters:
-
-```bash
-codecrafters submit
-```
-
-The CodeCrafters test runner will compile the project and run the current challenge stage tests.
-
----
-
-## Example Usage
-
-```bash
-$ echo hello
-hello
-
-$ pwd
-/Users/example/codecrafters-shell-java
-
-$ type echo
-echo is a shell builtin
-
-$ echo hello | wc
-       1       1       6
-
-$ sleep 10 &
-[1] 12345
-
-$ jobs
-[1]+  Running                 sleep 10 &
-
 $ declare name=Sanskar
-
 $ echo $name
 Sanskar
 
-$ history
-    1  echo hello
-    2  pwd
-    3  type echo
-    4  echo hello | wc
-    5  sleep 10 &
-    6  jobs
-    7  declare name=Sanskar
-    8  echo $name
-    9  history
+$ declare Item=widget
+$ echo stock_${Item}_id
+stock_widget_id
+```
+
+Supported variable features:
+
+* `declare name=value`
+* `declare -p name`
+* valid identifier checking
+* `$VAR` expansion
+* `${VAR}` expansion
+* unset variables expanding to empty string
+
+---
+
+## 7. Redirection Flow
+
+```mermaid
+flowchart TD
+    A[Command Input] --> B[Parse Redirection Tokens]
+    B --> C{Redirection Type}
+
+    C -->|>| D[Write stdout to file]
+    C -->|>>| E[Append stdout to file]
+    C -->|2>| F[Write stderr to file]
+    C -->|2>>| G[Append stderr to file]
+
+    D --> H[Execute Command]
+    E --> H
+    F --> H
+    G --> H
+```
+
+Examples:
+
+```bash
+echo hello > output.txt
+echo world >> output.txt
+invalid_command 2> error.txt
+invalid_command 2>> error.txt
 ```
 
 ---
 
-## Notes
+## 8. Builtin Command Table
 
-This project is built as part of the CodeCrafters shell challenge. It is a learning-focused shell implementation and is POSIX-inspired, not a full production replacement for shells like Bash, Zsh, or Fish.
-
-The goal of this project is to understand how shells work internally, including command parsing, process execution, pipes, redirection, job control, command history, tab completion, and shell variables.
+| Builtin    | Purpose                                       |
+| ---------- | --------------------------------------------- |
+| `echo`     | Print arguments                               |
+| `exit`     | Exit shell                                    |
+| `type`     | Show whether a command is builtin or external |
+| `pwd`      | Print current directory                       |
+| `cd`       | Change directory                              |
+| `jobs`     | List background jobs                          |
+| `complete` | Register programmable completions             |
+| `history`  | Show and manage command history               |
+| `declare`  | Store and inspect shell variables             |
 
 ---
 
-## Author
+## 9. Internal Flow Summary
 
-Built by **Sanskar Bhanderi** as part of the CodeCrafters Build Your Own Shell challenge.
+```mermaid
+flowchart TD
+    A[Start Shell] --> B[Load HISTFILE]
+    B --> C[Show Prompt]
+    C --> D[Read Character Input]
+
+    D -->|Normal characters| E[Update input buffer]
+    D -->|TAB| F[Autocomplete Engine]
+    D -->|Arrow keys| G[History Navigation]
+    D -->|ENTER| H[Execute Command]
+
+    H --> I[Parse Command]
+    I --> J[Expand Variables]
+    J --> K{Builtin / External / Pipeline / Background}
+
+    K --> L[Run Builtin]
+    K --> M[Run External Process]
+    K --> N[Run Pipeline]
+    K --> O[Start Background Job]
+
+    L --> P[Reap Finished Jobs]
+    M --> P
+    N --> P
+    O --> P
+
+    P --> C
+```
+
+---
