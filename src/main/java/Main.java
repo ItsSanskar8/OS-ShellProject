@@ -21,6 +21,8 @@ public class Main {
     private static int previousJobId = -1;
     private static final Map<String, String> completers = new HashMap<>();
 
+    private static final Map<String, String> shellVariables = new HashMap<>();
+
     private static final List<String> commandHistory = new ArrayList<>();
 
     private static int historyAppendStart = 0;
@@ -31,7 +33,7 @@ public class Main {
     private static List<String> lastCompletionDisplays = new ArrayList<>();
 
     private static final List<String> BUILTINS = Arrays.asList(
-            "echo", "exit", "type", "pwd", "cd", "jobs", "complete", "history"
+            "echo", "exit", "type", "pwd", "cd", "jobs", "complete", "declare", "history", "declare"
     );
 
     public static void main(String[] args) throws Exception {
@@ -479,8 +481,106 @@ public class Main {
         System.out.flush();
     }
 
+    private static List<String> expandTokens(List<String> tokens) {
+        List<String> expanded = new ArrayList<>();
+
+        for (String token : tokens) {
+            if (isShellOperatorToken(token)) {
+                expanded.add(token);
+                continue;
+            }
+
+            String value = expandWord(token);
+
+            // CodeCrafters expects pure empty expansion like ${missing2} to vanish.
+            if (!value.isEmpty()) {
+                expanded.add(value);
+            }
+        }
+
+        return expanded;
+    }
+
+    private static boolean isShellOperatorToken(String token) {
+        return token.equals("|")
+                || token.equals("&")
+                || token.equals(">")
+                || token.equals(">>")
+                || token.equals("1>")
+                || token.equals("1>>")
+                || token.equals("2>")
+                || token.equals("2>>");
+    }
+
+    private static String expandWord(String word) {
+        StringBuilder result = new StringBuilder();
+
+        for (int i = 0; i < word.length(); i++) {
+            char c = word.charAt(i);
+
+            if (c != '$') {
+                result.append(c);
+                continue;
+            }
+
+            if (i + 1 >= word.length()) {
+                result.append(c);
+                continue;
+            }
+
+            char next = word.charAt(i + 1);
+
+            if (next == '{') {
+                int close = word.indexOf('}', i + 2);
+
+                if (close == -1) {
+                    result.append(c);
+                    continue;
+                }
+
+                String name = word.substring(i + 2, close);
+                result.append(shellVariables.getOrDefault(name, ""));
+                i = close;
+                continue;
+            }
+
+            if (isVariableStart(next)) {
+                int j = i + 1;
+
+                while (j < word.length() && isVariablePart(word.charAt(j))) {
+                    j++;
+                }
+
+                String name = word.substring(i + 1, j);
+                result.append(shellVariables.getOrDefault(name, ""));
+                i = j - 1;
+                continue;
+            }
+
+            result.append(c);
+        }
+
+        return result.toString();
+    }
+
+    private static boolean isVariableStart(char c) {
+        return Character.isLetter(c) || c == '_';
+    }
+
+    private static boolean isVariablePart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
     private static void executeLine(String input) {
         List<String> tokens = parseCommand(input);
+
+        if (tokens.isEmpty()) {
+            return;
+        }
+
+        if (!tokens.get(0).equals("declare")) {
+            tokens = expandTokens(tokens);
+        }
 
         if (tokens.isEmpty()) {
             return;
@@ -560,9 +660,69 @@ public class Main {
                 handleHistory(parts, parsed.stdoutFile, parsed.stdoutAppend);
                 break;
 
+            case "declare":
+                createEmptyFileIfNeeded(parsed.stderrFile, parsed.stderrAppend);
+                handleDeclare(parts, parsed.stdoutFile, parsed.stdoutAppend);
+                break;
+
             default:
                 break;
         }
+    }
+
+    private static void handleDeclare(List<String> parts, String stdoutFile, boolean stdoutAppend) {
+        if (parts.size() >= 3 && parts.get(1).equals("-p")) {
+            String name = parts.get(2);
+
+            if (shellVariables.containsKey(name)) {
+                writeStdout("declare -- " + name + "=\"" + shellVariables.get(name) + "\"", stdoutFile, stdoutAppend);
+            } else {
+                writeStdout("declare: " + name + ": not found", stdoutFile, stdoutAppend);
+            }
+
+            return;
+        }
+
+        for (int i = 1; i < parts.size(); i++) {
+            String assignment = parts.get(i);
+            int equalsIndex = assignment.indexOf('=');
+
+            String name = equalsIndex >= 0 ? assignment.substring(0, equalsIndex) : assignment;
+
+            if (!isValidIdentifier(name)) {
+                writeStdout("declare: `" + assignment + "': not a valid identifier", stdoutFile, stdoutAppend);
+                continue;
+            }
+
+            if (equalsIndex >= 0) {
+                String value = assignment.substring(equalsIndex + 1);
+                shellVariables.put(name, value);
+            } else {
+                shellVariables.putIfAbsent(name, "");
+            }
+        }
+    }
+
+    private static boolean isValidIdentifier(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+
+        char first = name.charAt(0);
+
+        if (!(Character.isLetter(first) || first == '_')) {
+            return false;
+        }
+
+        for (int i = 1; i < name.length(); i++) {
+            char c = name.charAt(i);
+
+            if (!(Character.isLetterOrDigit(c) || c == '_')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void handleHistory(List<String> parts, String stdoutFile, boolean stdoutAppend) {
