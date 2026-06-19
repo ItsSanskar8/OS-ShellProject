@@ -921,6 +921,11 @@ public class Main {
     }
 
     private static void handleJobs(String stdoutFile, boolean stdoutAppend) {
+        try {
+            Thread.sleep(80);
+        } catch (InterruptedException ignored) {
+        }
+
         List<Job> snapshot = new ArrayList<>(jobs);
         snapshot.sort((a, b) -> Integer.compare(a.id, b.id));
 
