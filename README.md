@@ -1,4 +1,4 @@
-# Java Shell — CodeCrafters Build Your Own Shell
+# Java Shell — Build Your Own Shell
 
 A POSIX-inspired shell implemented in **Java** as part of the CodeCrafters **Build Your Own Shell** challenge.
 
